@@ -66,6 +66,28 @@
   ]
  },
  {
+  "id": "OVR-007",
+  "category": "override",
+  "severity": "high",
+  "description": "Tells the model to stop being its current role and announces a new job for it.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-008",
+  "category": "override",
+  "severity": "high",
+  "description": "Declares the earlier rules a test or mistake and announces the real rule.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
   "id": "SPF-001",
   "category": "spoof",
   "severity": "medium",
@@ -167,7 +189,7 @@
  {
   "id": "JBK-003",
   "category": "jailbreak",
-  "severity": "medium",
+  "severity": "high",
   "description": "Asks for a dual answer, one normal and one unfiltered.",
   "applies_to": [
    "user",
@@ -213,6 +235,17 @@
   "category": "leak",
   "severity": "medium",
   "description": "Asks the model to repeat everything that came before the user turn.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "LEK-005",
+  "category": "leak",
+  "severity": "high",
+  "description": "Asks the model to repeat the text above it verbatim, starting from an opening phrase or including everything.",
   "applies_to": [
    "user",
    "document",

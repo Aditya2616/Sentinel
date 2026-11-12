@@ -61,6 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--train-set", default="train", help="processed training file: train, train_base, train_aug or train_ext")
     ap.add_argument("--select-dev", default="spml_dev", help="extra held-out set (e.g. spml_dev) averaged with validation PR-AUC for choosing the epoch")
     ap.add_argument("--patience", type=int, default=2, help="stop after this many epochs without improvement (0 = never)")
+    ap.add_argument("--repeat-pool", action="append", default=None, help="POOL=K: repeat the rows of a training pool K times in total (default: hw_hn_train=4)")
     ap.add_argument("--device", default=None, help="cuda | cpu | auto (default: auto, or SENTINEL_DEVICE)")
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N training rows")
     a = ap.parse_args(argv)
@@ -84,6 +85,9 @@ def main(argv: list[str] | None = None) -> None:
         D.fetch()
         D.build()
     train, val = D.load(a.train_set), D.load("val")
+    for spec in (a.repeat_pool if a.repeat_pool is not None else ["hw_hn_train=4"]):
+        pool, k = spec.split("=")
+        train = train + [r for r in train if r.get("pool") == pool] * (int(k) - 1)
     dev = D.load(f"test_{a.select_dev}") if a.select_dev else []
     if a.limit:
         random.Random(0).shuffle(train)

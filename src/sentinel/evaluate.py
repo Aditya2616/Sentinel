@@ -35,13 +35,16 @@ from .sysinfo import load_note
 ROOT = D.ROOT
 OUT = ROOT / "docs" / "data"
 SCORES = ROOT / "runs" / "scores"
-TEST_SETS = ["indist", "deepset", "spml", "spml_dev", "hard_benign", "obfuscated", "attacks", "dolly_benign", "indirect"]
+TEST_SETS = ["indist", "deepset", "spml", "spml_dev", "hard_benign", "hard_benign_dedup", "hard_benign_v2", "attacks_v2", "obfuscated", "attacks", "dolly_benign", "indirect"]
 SET_LABEL = {
     "indist": "In-distribution (neuralchemy + jackhhao test, de-duplicated)",
     "deepset": "OOD: deepset/prompt-injections (EN + DE)",
     "spml": "OOD-test: SPML chatbot prompts (half, fixed-seed split)",
     "spml_dev": "OOD-dev: other half of SPML (model selection only, never reported as a result)",
-    "hard_benign": "Hard benign: talks about injection (hand-written)",
+    "hard_benign": "Hard benign v1: talks about injection (hand-written; looked at once before the round-two re-selection)",
+    "hard_benign_dedup": "Hard benign v1, templated near-duplicates removed",
+    "hard_benign_v2": "Hard benign v2 (hand-written, frozen before the round-two models were run)",
+    "attacks_v2": "Plain attacks v2 (hand-written, frozen before the round-two models were run)",
     "obfuscated": "Obfuscated attacks + obfuscated benign (hand-written)",
     "attacks": "Plain attacks (hand-written)",
     "dolly_benign": "Everyday benign (Dolly-15k held-out)",
@@ -82,22 +85,74 @@ def _cached(key: str, fn, refresh: bool, n: int) -> np.ndarray:
     return arr
 
 
-def choose_thresholds(val_y: np.ndarray, val_s: np.ndarray, val_decide_fn) -> tuple[Thresholds, dict]:
-    """Operating points from the validation split only: block at 1% FPR, flag at 3%, agreement at 10%."""
-    t_block = threshold_at_fpr(val_y, val_s, 0.01)
-    t_flag = min(t_block, threshold_at_fpr(val_y, val_s, 0.03))
-    t_agree = min(t_flag, threshold_at_fpr(val_y, val_s, 0.10))
-    best, info = None, {}
-    for rbh in (True, False):
-        th = Thresholds(t_flag=t_flag, t_block=t_block, t_agree=t_agree, rule_block_high=rbh)
-        pred = val_decide_fn(th)
-        c = confusion(val_y, np.array([a == "block" for a in pred]))
-        m = prf(c)
-        info[f"rule_block_high={rbh}"] = {"f1": m["f1"], "fpr": m["fpr"], "recall": m["recall"]}
-        # prefer the policy with the higher validation F1; ties go to letting rules block (the safer default)
-        if best is None or m["f1"] > best[1] + 1e-9:
-            best = (th, m["f1"])
-    return best[0], info
+HARD_BENIGN_VAL_POOLS = ("hw_hard_benign_val", "hw_hn_val")
+# Rule fixed before any round-two model was trained: for each preset, the block threshold is the lowest score threshold whose
+# validation false-positive rate is at or below these caps on (hard-benign text, everyday benign text); the flag threshold
+# uses looser caps. Validation only; no test set is consulted.
+PRESET_CAPS = {
+    "strict": {"block": (0.01, 0.005), "flag": (0.05, 0.02)},
+    "balanced": {"block": (0.02, 0.005), "flag": (0.10, 0.02)},
+    "permissive": {"block": (0.05, 0.01), "flag": (0.20, 0.03)},
+}
+DEFAULT_PRESET = "balanced"
+
+
+def val_masks(val_rows: list[dict]) -> tuple[np.ndarray, np.ndarray]:
+    hb = np.array([r.get("pool") in HARD_BENIGN_VAL_POOLS for r in val_rows])
+    dolly = np.array([r.get("pool") == "dolly_val" for r in val_rows])
+    return hb, dolly
+
+
+def lowest_threshold(scores: np.ndarray, hb: np.ndarray, dolly: np.ndarray, caps: tuple[float, float]) -> float:
+    """Lowest threshold whose FPR is within ``caps`` on the validation hard-benign set and the everyday-benign set."""
+    t_hb = threshold_at_fpr(np.zeros(int(hb.sum())), scores[hb], caps[0])
+    t_dl = threshold_at_fpr(np.zeros(int(dolly.sum())), scores[dolly], caps[1])
+    return float(max(t_hb, t_dl))
+
+
+def choose_presets(val_y: np.ndarray, val_s: np.ndarray, val_rows: list[dict], val_decide_fn) -> tuple[dict[str, Thresholds], dict]:
+    """strict / balanced / permissive operating points from the validation split only."""
+    hb, dolly = val_masks(val_rows)
+    t_agree0 = threshold_at_fpr(val_y, val_s, 0.10)
+    out: dict[str, Thresholds] = {}
+    info: dict = {"hard_benign_val_n": int(hb.sum()), "everyday_val_n": int(dolly.sum()), "caps": PRESET_CAPS}
+    for name, caps in PRESET_CAPS.items():
+        t_block = lowest_threshold(val_s, hb, dolly, caps["block"])
+        t_flag = min(t_block, lowest_threshold(val_s, hb, dolly, caps["flag"]))
+        t_agree = min(t_flag, t_agree0)
+        chosen, rec = None, {}
+        for rbh in (True, False):  # may a high-severity rule block on its own? keep it unless that breaks the hard-benign cap
+            th = Thresholds(t_flag=t_flag, t_block=t_block, t_agree=t_agree, rule_block_high=rbh, preset=name)
+            blocked = np.array([a == "block" for a in val_decide_fn(th)])
+            rec[f"rule_block_high={rbh}"] = {"hard_benign_val_fpr": float(blocked[hb].mean()), "everyday_val_fpr": float(blocked[dolly].mean())}
+            if chosen is None and blocked[hb].mean() <= caps["block"][0] + 1e-9:
+                chosen = th
+        out[name] = chosen or Thresholds(t_flag=t_flag, t_block=t_block, t_agree=t_agree, rule_block_high=False, preset=name)
+        info[name] = rec
+    return out, info
+
+
+def operating_table(systems: dict, val_scores: dict, val_rows: list[dict], Y: dict, T_sets: list[str], levels=(0.01, 0.02, 0.05)) -> dict:
+    """Per model: thresholds that give 1, 2 and 5% FPR on the validation hard-benign set, and what they do on every test set."""
+    from .metrics import wilson
+
+    hb, _ = val_masks(val_rows)
+    out: dict = {"levels": list(levels), "systems": {}}
+    for sname, per in systems.items():
+        out["systems"][sname] = {}
+        for lv in levels:
+            thr = float(threshold_at_fpr(np.zeros(int(hb.sum())), val_scores[sname][hb], lv))
+            rec, fpr = {}, {}
+            for n in T_sets:
+                y, sc = Y[n], per[n]
+                if y.sum():
+                    k = int(((sc >= thr) & (y == 1)).sum())
+                    rec[n] = {"v": k / int(y.sum()), "ci": wilson(k, int(y.sum())), "k": k, "n": int(y.sum())}
+                if (1 - y).sum():
+                    k = int(((sc >= thr) & (y == 0)).sum())
+                    fpr[n] = {"v": k / int((1 - y).sum()), "ci": wilson(k, int((1 - y).sum())), "k": k, "n": int((1 - y).sum())}
+            out["systems"][sname][str(lv)] = {"threshold": thr, "recall": rec, "fpr": fpr}
+    return out
 
 
 def _clean(o):
@@ -254,15 +309,25 @@ def main(argv: list[str] | None = None) -> None:
         sent.thresholds = th
         return [d.action for d in sent.screen_batch(val_t)]
 
-    th, policy_info = choose_thresholds(val_y, val_scores["classifier"], val_decide)
+    presets, policy_info = choose_presets(val_y, val_scores["classifier"], val, val_decide)
+    th = presets[DEFAULT_PRESET]
     sent.thresholds = th
-    (model_dir / "thresholds.json").write_text(json.dumps(th.to_dict(), indent=2))
-    print("thresholds", th, policy_info, flush=True)
-    sys_thr = {s: threshold_at_fpr(val_y, val_scores[s], 0.01) for s in val_scores}
+    hb_val, dolly_val = val_masks(val)
+    (model_dir / "thresholds.json").write_text(
+        json.dumps({"default": DEFAULT_PRESET, "presets": {k: {x: v for x, v in t.to_dict().items() if x != "preset"} for k, t in presets.items()}, "selection": policy_info}, indent=2)
+    )
+    print("thresholds", {k: (round(t.t_flag, 3), round(t.t_block, 3), t.rule_block_high) for k, t in presets.items()}, flush=True)
+    sys_thr = {s: lowest_threshold(val_scores[s], hb_val, dolly_val, PRESET_CAPS[DEFAULT_PRESET]["block"]) for s in val_scores}
 
     # --- full Sentinel pipeline decisions
     print("running full pipeline", flush=True)
     decisions = {n: sent.screen_batch(T[n], _src(n)) for n in TEST_SETS}
+    preset_decisions = {DEFAULT_PRESET: decisions}
+    for pname, pth in presets.items():
+        if pname != DEFAULT_PRESET:
+            sent.thresholds = pth
+            preset_decisions[pname] = {n: sent.screen_batch(T[n], _src(n)) for n in TEST_SETS}
+    sent.thresholds = th
     rules_only = Sentinel(None, th)
     rules_dec = {n: rules_only.screen_batch(T[n], _src(n)) for n in TEST_SETS}
 
@@ -342,7 +407,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # --- errors worth showing (truncated)
     errors = {"false_positives": [], "false_negatives": []}
-    for n in [x for x in TEST_SETS if x != "spml_dev"]:
+    for n in [x for x in TEST_SETS if x not in ("spml_dev", "hard_benign_dedup")]:
         for r, d in zip(tests[n], decisions[n], strict=True):
             row = {"set": n, "text": r["text"][:220], "score": d.score, "action": d.action, "rules": sorted({h.rule_id for h in d.hits}), "category": r.get("category")}
             if r["label"] == 0 and d.action == "block":
@@ -371,6 +436,11 @@ def main(argv: list[str] | None = None) -> None:
         "scoring_device": scoring_device,
         "alt_model": alt_name,
         "system_labels": system_labels(clf.name, alt_name),
+        "presets": {k: t.to_dict() for k, t in presets.items()},
+        "default_preset": DEFAULT_PRESET,
+        "preset_rule": "block threshold = lowest threshold with validation hard-benign FPR and everyday-benign FPR within the preset caps (see PRESET_CAPS); flag threshold uses looser caps",
+        "val_hard_benign_n": int(hb_val.sum()),
+        "distinct_hard_benign": json.loads((D.PROCESSED / "build_report.json").read_text()).get("distinct_hard_benign"),
         "alt_training_log": alt_log,
         "training_log": json.loads((model_dir / "training_log.json").read_text()) if (model_dir / "training_log.json").exists() else None,
         "sources": D.SOURCES,
@@ -378,7 +448,30 @@ def main(argv: list[str] | None = None) -> None:
         "set_labels": SET_LABEL,
         "pooled": pooled_conf,
     }
-    out = {"meta": meta, "results": results, "curves": curves, "deepset_by_language": by_lang, "per_category_recall_indist": cats, "calibration": cal, "shortcuts": shortcuts, "errors": errors, "latency": latency, "slider": slider}
+    from .metrics import wilson
+
+    preset_results: dict = {}
+    for pname, dec in preset_decisions.items():
+        preset_results[pname] = {"thresholds": presets[pname].to_dict(), "sets": {}}
+        for n in TEST_SETS:
+            blk = np.array([d.action == "block" for d in dec[n]])
+            alr = np.array([d.action != "allow" for d in dec[n]])
+            y = Y[n]
+            e: dict = {"n_pos": int(y.sum()), "n_neg": int((1 - y).sum())}
+            if e["n_pos"]:
+                e["recall_block"] = float(blk[y == 1].mean())
+                e["recall_flag_or_block"] = float(alr[y == 1].mean())
+                e["recall_ci"] = wilson(int(blk[y == 1].sum()), e["n_pos"])
+            if e["n_neg"]:
+                e["fpr_block"] = float(blk[y == 0].mean())
+                e["fpr_ci"] = wilson(int(blk[y == 0].sum()), e["n_neg"])
+                e["fp"] = int(blk[y == 0].sum())
+            preset_results[pname]["sets"][n] = e
+    op_systems = {k: systems[k] for k in ("classifier", "alt", "tfidf") if k in systems}
+    op_names = {"classifier": "classifier", "alt": "classifier_alt", "tfidf": "tfidf"}
+    op = operating_table(op_systems, val_scores, val, Y, TEST_SETS)
+    op["systems"] = {op_names[k]: v for k, v in op["systems"].items()}
+    out = {"meta": meta, "preset_results": preset_results, "operating_table": op, "results": results, "curves": curves, "deepset_by_language": by_lang, "per_category_recall_indist": cats, "calibration": cal, "shortcuts": shortcuts, "errors": errors, "latency": latency, "slider": slider}
     out_dir = Path(a.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "eval.json").write_text(json.dumps(_clean(out), ensure_ascii=False, separators=(",", ":"), default=float), encoding="utf-8")

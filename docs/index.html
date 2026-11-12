@@ -85,6 +85,8 @@
         <div class="cards" id="cards"></div>
         <div class="label" style="margin:22px 0 8px">Every system, every test set (recall R on attacks, false-positive rate FPR on benign)</div>
         <div class="tablewrap"><table id="sys-table"></table></div>
+        <div class="label" style="margin:22px 0 8px">Operating presets: the same model with stricter or looser thresholds (chosen on validation data only)</div>
+        <div class="tablewrap"><table id="preset-table"></table></div>
         <p class="honest">In-distribution scores are the least informative here: the training data is partly templated, so that column looks better than real traffic will. Rely on the OOD and hard-benign columns. The indirect-injection set is <b>synthetic</b> and small.</p>
         <div class="panel" style="margin-top:18px">
           <div class="sel" id="curve-set" role="group" aria-label="Dataset for the curves"></div>

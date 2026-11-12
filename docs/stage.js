@@ -98,6 +98,7 @@ export class Stage {
   }
 
   chipFor(item) {
+    if (item.typed) return 'you';
     if (this.mini || item.set == null) return '';
     const hit = item.rules && item.rules[0];
     if (hit) return hit.cat.slice(0, 9);

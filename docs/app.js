@@ -198,6 +198,7 @@ async function liveScreen(log) {
     renderResult(text, norm);
     if (log) {
       mini.inject({ text, action: d.action, label: null, reason: d.reason });
+      hero.inject({ text, action: d.action, label: null, reason: d.reason, typed: true, rules: (d.hits || []).map((x) => ({ cat: x.category })), score: d.score });  // your prompt also crosses the main stage
       loadAudit();
       toast(`${d.action.toUpperCase()} · logged to the audit trail`);
     }
@@ -277,9 +278,22 @@ const SYS = [
   ['tfidf', 'TF-IDF + logistic regression'],
   ['classifier_alt', 'Other encoder alone'],
 ];
-const SETS = ['indist', 'deepset', 'spml', 'obfuscated', 'attacks', 'hard_benign', 'dolly_benign', 'indirect'];
-const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)', obfuscated: 'Obfuscated', attacks: 'Plain attacks', hard_benign: 'Hard benign', dolly_benign: 'Everyday benign', indirect: 'Indirect (synthetic)' };
+const SETS = ['indist', 'deepset', 'spml', 'obfuscated', 'attacks', 'attacks_v2', 'hard_benign_v2', 'hard_benign', 'hard_benign_dedup', 'dolly_benign', 'indirect'];
+const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)', obfuscated: 'Obfuscated', attacks: 'Plain attacks', hard_benign_v2: 'Hard benign v2 (frozen)', hard_benign: 'Hard benign v1 (seen once)', hard_benign_dedup: 'Hard benign v1, distinct', attacks_v2: 'Plain attacks v2', dolly_benign: 'Everyday benign', indirect: 'Indirect (synthetic)' };
 function ci(a) { return a ? `${(a[0] * 100).toFixed(1)}–${(a[1] * 100).toFixed(1)}` : ''; }
+function renderPresets(E) {
+  const tb = $('#preset-table');
+  if (!tb || !E.preset_results) return;
+  const cols = [['deepset', 'deepset recall'], ['spml', 'SPML recall'], ['attacks_v2', 'Plain v2 recall']];
+  const fcols = [['hard_benign_v2', 'Hard benign v2'], ['hard_benign', 'v1'], ['hard_benign_dedup', 'v1 distinct'], ['dolly_benign', 'Everyday']];
+  const head = h('tr', {}, h('th', { text: 'Preset' }), h('th', { text: 'block / flag threshold' }), cols.map(([, l]) => h('th', { text: l + ' (block, flag or block)' })), fcols.map(([, l]) => h('th', { text: l + ' FPR' })));
+  const rows = Object.entries(E.preset_results).map(([name, pr]) => h('tr', { class: name === E.meta.default_preset ? 'hl-row' : '' },
+    h('td', { text: name + (name === E.meta.default_preset ? ' (default)' : '') }),
+    h('td', { text: `${pr.thresholds.t_block.toFixed(3)} / ${pr.thresholds.t_flag.toFixed(3)}` }),
+    cols.map(([k]) => { const e = pr.sets[k]; return h('td', { text: e && e.n_pos ? `${pct(e.recall_block, 0)} · ${pct(e.recall_flag_or_block, 0)}` : '·' }); }),
+    fcols.map(([k]) => { const e = pr.sets[k]; return h('td', { text: e && e.n_neg ? `${pct(e.fpr_block)} (${e.fp}/${e.n_neg})` : '·' }); })));
+  tb.replaceChildren(h('thead', {}, head), h('tbody', {}, rows));
+}
 function renderMetrics() {
   const E = state.eval, R = E.results, S = R.sentinel;
   const LBL = E.meta.system_labels || {};
@@ -287,10 +301,10 @@ function renderMetrics() {
   if (LBL.classifier) SERIES.classifier[0] = LBL.classifier;
   if (LBL.classifier_alt) SERIES.alt[0] = LBL.classifier_alt;
   const cards = $('#cards');
-  const hb = S.hard_benign, ds = S.deepset, sp = S.spml, lat = E.latency.sentinel_full;
+  const hb = S.hard_benign_v2 || S.hard_benign, hb1 = S.hard_benign, hbd = S.hard_benign_dedup, ds = S.deepset, sp = S.spml, lat = E.latency.sentinel_full;
   const mk = (label, v, c, n) => h('div', { class: 'card' }, h('div', { class: 'label', text: label }), h('div', { class: 'v', text: v }), h('div', { class: 'ci', text: c }), h('div', { class: 'n', text: n }));
   cards.replaceChildren(
-    mk('False alarms on hard benign text', pct(hb.fpr), `95% CI ${ci(hb.fpr_ci)}%`, `${hb.confusion.fp} of ${hb.n_neg} benign prompts that talk about injection were blocked.`),
+    mk('False alarms on hard benign text (v2)', pct(hb.fpr), `95% CI ${ci(hb.fpr_ci)}%`, `${hb.confusion.fp} of ${hb.n_neg} benign prompts that talk about injection were blocked (v2, frozen before the models were run). v1, seen once earlier: ${pct(hb1.fpr)} (${hb1.confusion.fp} of ${hb1.n_neg})${hbd ? `; v1 with templated near-duplicates removed: ${pct(hbd.fpr)} (${hbd.confusion.fp} of ${hbd.n_neg})` : ''}.`),
     mk('Attack recall, deepset (OOD)', pct(ds.recall), `95% CI ${ci(ds.recall_ci)}%`, `Held-out, never trained on. English ${pct(E.deepset_by_language.en?.recall, 0)}, German ${pct(E.deepset_by_language.de?.recall, 0)}.`),
     mk('Attack recall, SPML (OOD)', pct(sp.recall), `95% CI ${ci(sp.recall_ci)}%`, `${sp.n_pos} attacks from a different construction. FPR on its benign side ${pct(sp.fpr)}.`),
     mk('Latency per prompt (CPU)', `${lat.p50_ms.toFixed(0)} ms`, `p95 ${lat.p95_ms.toFixed(0)} ms${E.latency.gpu ? ` · GPU: ${E.latency.gpu.sentinel_full.p50_ms.toFixed(0)} ms p50` : ''}`, `Full pipeline, one prompt at a time, ${E.latency.threads} CPU threads. Load when measured: ${(E.latency.load || 'not recorded').replace('system-wide CPU utilisation ', '').replace(' just before the run', '')} CPU use. A busy machine inflates this: a ballpark.`),
@@ -308,6 +322,7 @@ function renderMetrics() {
       return h('td', {}, ...parts, h('small', { text: `n=${e.n}` }));
     })));
   tb.replaceChildren(h('thead', {}, head), h('tbody', {}, rows));
+  renderPresets(E);
   setupCurves();
   setupCM();
   const cal = $('#cal');

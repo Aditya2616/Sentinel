@@ -1,0 +1,86 @@
+[
+ {
+  "variant": "v1 (original data, 3 epochs, no dev selection)",
+  "train_rows": 5864,
+  "epochs_run": 3,
+  "val_pr_auc": 0.996722274557472,
+  "dev_pr_auc": 0.9346192213805716,
+  "threshold_at_1pct_val_fpr": 0.9761312796253355,
+  "dev_recall_at_that_threshold": 0.29,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "base data + early stop on dev",
+  "train_rows": 5864,
+  "epochs_run": 5,
+  "val_pr_auc": 0.9948636828108356,
+  "dev_pr_auc": 0.950064654849118,
+  "threshold_at_1pct_val_fpr": 0.9728990654222105,
+  "dev_recall_at_that_threshold": 0.3566666666666667,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "base + augmentation",
+  "train_rows": 7445,
+  "epochs_run": 4,
+  "val_pr_auc": 0.9929572467505855,
+  "dev_pr_auc": 0.9632305934006237,
+  "threshold_at_1pct_val_fpr": 0.9763051606106701,
+  "dev_recall_at_that_threshold": 0.23,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "base + extra public data",
+  "train_rows": 10861,
+  "epochs_run": 5,
+  "val_pr_auc": 0.9963971508940545,
+  "dev_pr_auc": 0.9477847888066929,
+  "threshold_at_1pct_val_fpr": 0.9876725985511033,
+  "dev_recall_at_that_threshold": 0.34,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "base + augmentation + extra data",
+  "train_rows": 13270,
+  "epochs_run": 4,
+  "val_pr_auc": 0.9952398681331872,
+  "dev_pr_auc": 0.9580595880742728,
+  "threshold_at_1pct_val_fpr": 0.9720837092359583,
+  "dev_recall_at_that_threshold": 0.33,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "base + augmentation + extra data, lr 5e-5",
+  "train_rows": 13270,
+  "epochs_run": 6,
+  "val_pr_auc": 0.9962667721265723,
+  "dev_pr_auc": 0.9373154392077874,
+  "threshold_at_1pct_val_fpr": 0.9760805287689727,
+  "dev_recall_at_that_threshold": 0.31,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ },
+ {
+  "variant": "DeBERTa-v3-xsmall, augmentation + extra data",
+  "train_rows": 13270,
+  "epochs_run": 5,
+  "val_pr_auc": 0.9955184153201431,
+  "dev_pr_auc": 0.927484804703737,
+  "threshold_at_1pct_val_fpr": 0.9849128292791913,
+  "dev_recall_at_that_threshold": 0.53,
+  "dev_fpr_at_that_threshold": 0.0,
+  "val_hard_benign_n": 19,
+  "val_hard_benign_fpr_at_that_threshold": 0.0
+ }
+]

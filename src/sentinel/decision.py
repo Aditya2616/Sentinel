@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -28,12 +29,20 @@ class Thresholds:
     t_block: float = 0.90  # classifier score at which a prompt is blocked on its own
     t_agree: float = 0.30  # score at which a high-severity rule is allowed to block together with the classifier
     rule_block_high: bool = True  # a high-severity rule that is not in a quoted/"discussion" context blocks alone
+    preset: str = "custom"  # strict | balanced | permissive when loaded from a thresholds file
 
     @staticmethod
-    def load(path: Path | str | None) -> Thresholds:
+    def load(path: Path | str | None, preset: str | None = None) -> Thresholds:
+        """Read a thresholds file. A file with ``presets`` holds strict / balanced / permissive operating points;
+        pick one with ``preset`` or the SENTINEL_PRESET environment variable (default: the file's own default)."""
         if path and Path(path).exists():
             d = json.loads(Path(path).read_text())
-            return Thresholds(**{k: d[k] for k in ("t_flag", "t_block", "t_agree", "rule_block_high") if k in d})
+            if "presets" in d:
+                name = preset or os.environ.get("SENTINEL_PRESET") or d.get("default", "balanced")
+                if name not in d["presets"]:
+                    raise ValueError(f"unknown preset {name!r}; choose one of {sorted(d['presets'])}")
+                d = {**d["presets"][name], "preset": name}
+            return Thresholds(**{k: d[k] for k in ("t_flag", "t_block", "t_agree", "rule_block_high", "preset") if k in d})
         return Thresholds()
 
     def to_dict(self) -> dict:

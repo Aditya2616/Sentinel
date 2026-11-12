@@ -20,6 +20,11 @@ sys.path.insert(0, str(HERE))
 from test_v2 import ATTACKS_V2, HARD_BENIGN_V2  # noqa: E402
 
 
+def digest(path: Path) -> str:
+    """SHA-256 of the file with line endings normalised, so a Windows checkout hashes the same as a Linux one."""
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def write(name: str, texts: list[str], label: int, category: str) -> Path:
     p = OUT / name
     with p.open("w", encoding="utf-8", newline="\n") as f:
@@ -43,7 +48,7 @@ def main() -> None:
     for f in files:
         print(f.name, sum(1 for _ in f.open(encoding="utf-8")))
     if "--freeze" in sys.argv:
-        sums = {f.name: hashlib.sha256(f.read_bytes()).hexdigest() for f in files if "_v2_test" in f.name}
+        sums = {f.name: digest(f) for f in files if "_v2_test" in f.name}
         (OUT / "FROZEN_V2.json").write_text(json.dumps(sums, indent=2) + "\n", encoding="utf-8")
         print("frozen", sums)
 

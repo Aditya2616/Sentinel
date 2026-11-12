@@ -54,13 +54,13 @@ class Sentinel:
         self.audit = audit
 
     @classmethod
-    def load(cls, model_dir: Path | str | None = None, audit: AuditLog | None = None, require_model: bool = False) -> Sentinel:
+    def load(cls, model_dir: Path | str | None = None, audit: AuditLog | None = None, require_model: bool = False, preset: str | None = None) -> Sentinel:
         """Load the trained classifier if present; otherwise run in rules-only mode."""
         from .classifier import DEFAULT_MODEL_DIR, TransformerClassifier, model_available
 
         d = Path(model_dir) if model_dir else DEFAULT_MODEL_DIR
         if model_available(d):
-            return cls(TransformerClassifier(d), Thresholds.load(d / "thresholds.json"), audit)
+            return cls(TransformerClassifier(d), Thresholds.load(d / "thresholds.json", preset), audit)
         if require_model:
             raise FileNotFoundError(f"no trained model at {d}; run `sentinel train`")
         return cls(None, Thresholds(), audit)

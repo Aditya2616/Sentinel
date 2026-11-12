@@ -145,6 +145,8 @@ def _load_all() -> dict[str, list[dict]]:
     for split in ("train", "val", "test"):
         for kind in ("attacks", "hard_benign", "obfuscated"):
             pools[f"hw_{kind}_{split}"] = [dict(r, source="hand_written") for r in _read_jsonl(HAND / f"{kind}_{split}.jsonl")]
+    for name, key in (("hard_neg_val", "hw_hn_val"), ("hard_neg_train", "hw_hn_train"), ("hard_benign_v2_test", "hw_hard_benign_v2"), ("attacks_v2_test", "hw_attacks_v2")):
+        pools[key] = [dict(r, source="hand_written") for r in _read_jsonl(HAND / f"{name}.jsonl")]
     pools["hw_indirect"] = [dict(r, source="hand_written_synthetic") for r in _read_jsonl(HAND / "indirect_test.jsonl")]
     return pools
 
@@ -163,6 +165,16 @@ def _near_dups(train_texts: list[str], texts: list[str], thr: float = 0.9) -> np
     return mask
 
 
+def distinct_items(rows: list[dict], thr: float = 0.6) -> list[dict]:
+    """Greedy de-duplication of templated items: keep a row only if its word set is below ``thr`` Jaccard to every kept row."""
+    kept: list[tuple[set[str], dict]] = []
+    for r in rows:
+        w = set(re.findall(r"\w+", r["text"].lower()))
+        if all(len(w & k) / max(1, len(w | k)) < thr for k, _ in kept):
+            kept.append((w, r))
+    return [r for _, r in kept]
+
+
 def build() -> dict:
     pools = _load_all()
     PROCESSED.mkdir(parents=True, exist_ok=True)
@@ -173,17 +185,21 @@ def build() -> dict:
 
     base_names = ["nc_train", "jb_train", "hw_attacks_train", "hw_hard_benign_train", "hw_obfuscated_train"]
     train_base = combine(base_names)
+    hn_train = combine(["hw_hn_train"])  # round-two hard negatives, added to every variant except the first-round baseline
     aug_rows = [dict(r, pool="augmented") for r in augment(train_base)]
     extra_rows = combine(["ps_train", "gandalf_train"])
     train_variants = {"train_base": train_base, "train_aug": train_base + aug_rows, "train_ext": train_base + extra_rows}
-    train = train_base + extra_rows + [dict(r, pool="augmented") for r in augment(train_base + extra_rows)]
-    val = combine(["nc_val", "jb_val", "dolly_val", "hw_attacks_val", "hw_hard_benign_val", "hw_obfuscated_val"])
+    train_r1 = train_base + extra_rows + [dict(r, pool="augmented") for r in augment(train_base + extra_rows)]  # the round-one training set
+    train = train_r1 + hn_train
+    val = combine(["nc_val", "jb_val", "dolly_val", "hw_attacks_val", "hw_hard_benign_val", "hw_hn_val", "hw_obfuscated_val"])
     tests = {
         "indist": combine(["nc_test", "jb_test"]),
         "deepset": combine(["deepset"]),
         "spml": combine(["spml"]),
         "spml_dev": combine(["spml_dev"]),
         "hard_benign": combine(["hw_hard_benign_test"]),
+        "hard_benign_v2": combine(["hw_hard_benign_v2"]),
+        "attacks_v2": combine(["hw_attacks_v2"]),
         "attacks": combine(["hw_attacks_test"]),
         "obfuscated": combine(["hw_obfuscated_test"]),
         "dolly_benign": combine(["dolly_test"]),
@@ -218,6 +234,8 @@ def build() -> dict:
             report["dropped"][f"test_{name}_near_dup_in_train"] = int(mask.sum())
             kept = [r for r, m in zip(kept, mask, strict=True) if not m]
         tests[name] = kept
+    tests["hard_benign_dedup"] = distinct_items(tests["hard_benign"])
+    report["distinct_hard_benign"] = {"original": len(tests["hard_benign"]), "distinct": len(tests["hard_benign_dedup"])}
     sets = {"train": train, **variants_dd, "val": val, **{f"test_{k}": v for k, v in tests.items()}}
     for name, rows in sets.items():
         with (PROCESSED / f"{name}.jsonl").open("w", encoding="utf-8", newline="\n") as f:
