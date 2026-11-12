@@ -10,6 +10,7 @@ Screenshots go to docs/assets/ (live-*.png / static-*.png).
 from __future__ import annotations
 
 import http.server
+import json
 import socketserver
 import sys
 import threading
@@ -93,6 +94,11 @@ with sync_playwright() as p:
             else:
                 print(f"{name}: typed packet not found")
             page.evaluate("window.sentinelStage.setPlaying(true)")
+        # the metrics cards are read from docs/data/eval.json at run time; check they show exactly what the file says
+        ev = json.loads((ROOT / "docs" / "data" / "eval.json").read_text(encoding="utf-8"))["results"]["sentinel"]
+        want = [f"{ev['hard_benign_v2']['fpr'] * 100:.1f}%", f"{ev['deepset']['recall'] * 100:.1f}%", f"{ev['spml']['recall'] * 100:.1f}%"]
+        got = page.evaluate("() => [...document.querySelectorAll('#cards .card .v')].slice(0, 3).map((e) => e.textContent)")
+        print(f"{name}: metrics cards match eval.json: {got == want} {got}")
         page.locator("#inspect").scroll_into_view_if_needed()
         page.wait_for_timeout(600)
         if mode == "live":

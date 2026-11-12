@@ -2,7 +2,7 @@
 
 A safety layer that screens prompts for injection before they reach a model.
 
-Every incoming prompt is normalised, checked against about 40 rules for known injection patterns, and scored by a small fine-tuned classifier. Suspicious prompts are blocked and logged; clean ones pass through untouched. It runs as a Python library, a CLI, a FastAPI service, and an OpenAI-compatible proxy that sits in front of any chat endpoint.
+Every incoming prompt is normalised, checked against <!--v:n_rules-->46<!--/v--> rules for known injection patterns, and scored by a small fine-tuned classifier. Suspicious prompts are blocked and logged; clean ones pass through untouched. It runs as a Python library, a CLI, a FastAPI service, and an OpenAI-compatible proxy that sits in front of any chat endpoint.
 
 I built it because "ignore previous instructions" detectors tend to fail in two ways: they miss attacks that are lightly disguised, and they panic at benign text that merely *mentions* injection. So the numbers I care about most here are the false-positive rate on hard-benign text and the recall on data the model never saw, not the in-distribution F1.
 
@@ -74,8 +74,12 @@ To add the classifier (downloads the public datasets at pinned revisions, builds
 
 ```bash
 sentinel train          # picks a GPU if there is one, otherwise the CPU; times are in "Training" below (minutes on a GPU; hours on a CPU, estimated)
-sentinel eval           # writes docs/data/eval.json, stream.json, rules.json and thresholds
-python scripts/render_docs.py   # refreshes the generated result tables in this README and MODEL_CARD.md
+sentinel eval           # writes docs/data/eval.json, stream.json, rules.json, and thresholds.json next to the model
+# optional: a second encoder row and the zero-shot ProtectAI row (downloads about 0.7 GB):
+#   sentinel train --base sentence-transformers/all-MiniLM-L6-v2 --lr 8e-5 --out models/minilm
+#   sentinel eval --also models/minilm --with-protectai
+python scripts/render_docs.py           # refreshes the generated tables and quoted numbers in this README and MODEL_CARD.md
+python scripts/render_docs.py --check   # fails if they are out of sync with docs/data (the fast tests run this too)
 sentinel serve
 ```
 
@@ -102,7 +106,7 @@ The proxy screens `user` and `tool` messages (system and assistant turns are you
 
 ## Results
 
-Everything below is generated from `docs/data/eval.json` by `sentinel eval` and `scripts/render_docs.py`; rerun those to reproduce it. Thresholds and model choices use validation data only (and, for epoch and model selection, an OOD-dev half of SPML); deepset and the SPML OOD-test half were never used for any choice. Two caveats I want stated up front: the 60-item hard-benign test set (v1) was looked at once, in round one, before the round-two re-selection, so it is not a clean test any more; and the 26 plain attacks (v1) informed the round-two rule fixes. Both are kept and labelled, and clean frozen replacements (hard-benign v2, plain attacks v2) are reported beside them. Classifier scores were computed on a GPU in float32 (every system in a table on the same device and dtype); latency figures are measured on the CPU, with a GPU figure shown separately and labelled. Hand-written sets are small, so intervals are wide; I show them.
+Everything below is generated from `docs/data/eval.json` by `sentinel eval` and `scripts/render_docs.py`; rerun those to reproduce it. Thresholds and model choices use validation data only (and, for epoch and model selection, an OOD-dev half of SPML); deepset and the SPML OOD-test half were never used for any choice. Two caveats I want stated up front: the <!--v:hb_v1_n-->60<!--/v-->-item hard-benign test set (v1) was looked at once, in round one, before the round-two re-selection, so it is not a clean test any more; and the <!--v:att_v1_n-->26<!--/v--> plain attacks (v1) informed the round-two rule fixes. Both are kept and labelled, and clean frozen replacements (hard-benign v2, plain attacks v2) are reported beside them. Classifier scores were computed on a GPU in float32 (every system in a table on the same device and dtype); latency figures are measured on the CPU, with a GPU figure shown separately and labelled. Hand-written sets are small, so intervals are wide; I show them.
 
 ### Headline
 
@@ -129,57 +133,79 @@ Recall and false-positive rate carry 95% Wilson intervals (in brackets). "Sentin
 |---|---|---|---|---|---|---|---|
 | In-distribution test (neuralchemy + jackhhao) | 1187 (562 / 625) | Rules only | 9.1% [7.0, 11.7] | 28.1% | 0.0% [0.0, 0.6] | 0.166 | n/a |
 |  |  | TF-IDF + logistic regression | 89.0% [86.1, 91.3] | - | 0.6% [0.2, 1.6] | 0.938 | 0.994 |
-|  |  | MiniLM-L6 classifier | 92.2% [89.7, 94.1] | - | 1.1% [0.5, 2.3] | 0.953 | 0.997 |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 88.4% [85.5, 90.8] | - | 2.4% [1.5, 3.9] | 0.926 | 0.985 |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 49.8% [45.7, 53.9] | - | 0.0% [0.0, 0.6] | 0.665 | 0.985 |
+|  |  | MiniLM-L6 classifier | 92.2% [89.7, 94.1] | - | 1.0% [0.4, 2.1] | 0.954 | 0.995 |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 94.3% [92.1, 95.9] | - | 1.1% [0.5, 2.3] | 0.965 | 0.994 |
 |  |  | Sentinel (rules + classifier + decision) | 94.5% [92.3, 96.1] | 98.0% | 1.1% [0.5, 2.3] | 0.965 | 0.994 |
 | deepset/prompt-injections (OOD, EN+DE) | 660 (261 / 399) | Rules only | 17.6% [13.5, 22.7] | 18.0% | 0.0% [0.0, 1.0] | 0.300 | n/a |
 |  |  | TF-IDF + logistic regression | 17.6% [13.5, 22.7] | - | 0.0% [0.0, 1.0] | 0.300 | 0.741 |
-|  |  | MiniLM-L6 classifier | 36.4% [30.8, 42.4] | - | 8.0% [5.7, 11.1] | 0.490 | 0.771 |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 41.0% [35.2, 47.1] | - | 1.0% [0.4, 2.5] | 0.575 | 0.881 |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 7.7% [5.0, 11.5] | - | 0.0% [0.0, 1.0] | 0.142 | 0.881 |
+|  |  | MiniLM-L6 classifier | 34.1% [28.6, 40.0] | - | 4.5% [2.9, 7.0] | 0.484 | 0.813 |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 43.3% [37.4, 49.4] | - | 1.0% [0.4, 2.5] | 0.598 | 0.889 |
 |  |  | Sentinel (rules + classifier + decision) | 53.6% [47.6, 59.6] | 72.4% | 1.0% [0.4, 2.5] | 0.691 | 0.889 |
 | SPML OOD-test half | 597 (300 / 297) | Rules only | 17.7% [13.8, 22.4] | 21.0% | 0.0% [0.0, 1.3] | 0.300 | n/a |
 |  |  | TF-IDF + logistic regression | 10.7% [7.7, 14.7] | - | 0.0% [0.0, 1.3] | 0.193 | 0.771 |
-|  |  | MiniLM-L6 classifier | 37.3% [32.1, 42.9] | - | 0.0% [0.0, 1.3] | 0.544 | 0.907 |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 99.3% [97.6, 99.8] | - | 8.1% [5.5, 11.7] | 0.958 | 0.997 |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 86.7% [82.4, 90.1] | - | 0.0% [0.0, 1.3] | 0.929 | 0.997 |
+|  |  | MiniLM-L6 classifier | 35.3% [30.1, 40.9] | - | 0.0% [0.0, 1.3] | 0.522 | 0.900 |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 54.3% [48.7, 59.9] | - | 0.0% [0.0, 1.3] | 0.704 | 0.946 |
 |  |  | Sentinel (rules + classifier + decision) | 54.3% [48.7, 59.9] | 70.3% | 0.0% [0.0, 1.3] | 0.704 | 0.946 |
 | Hard-benign v2 (frozen before the round-two models were run) | 91 (0 / 91) | Rules only | n/a | - | 0.0% [0.0, 4.1] | n/a | n/a |
 |  |  | TF-IDF + logistic regression | n/a | - | 5.5% [2.4, 12.2] | n/a | n/a |
-|  |  | MiniLM-L6 classifier | n/a | - | 1.1% [0.2, 6.0] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | n/a | - | 37.4% [28.1, 47.6] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | n/a | - | 4.4% [1.7, 10.8] | n/a | n/a |
+|  |  | MiniLM-L6 classifier | n/a | - | 3.3% [1.1, 9.2] | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | n/a | - | 1.1% [0.2, 6.0] | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | n/a | - | 1.1% [0.2, 6.0] | n/a | n/a |
 | Hard-benign v1 (looked at once before the round-two re-selection) | 60 (0 / 60) | Rules only | n/a | - | 0.0% [0.0, 6.0] | n/a | n/a |
 |  |  | TF-IDF + logistic regression | n/a | - | 5.0% [1.7, 13.7] | n/a | n/a |
-|  |  | MiniLM-L6 classifier | n/a | - | 0.0% [0.0, 6.0] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | n/a | - | 21.7% [13.1, 33.6] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | n/a | - | 1.7% [0.3, 8.9] | n/a | n/a |
+|  |  | MiniLM-L6 classifier | n/a | - | 1.7% [0.3, 8.9] | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | n/a | - | 0.0% [0.0, 6.0] | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | n/a | - | 0.0% [0.0, 6.0] | n/a | n/a |
 | Hard-benign v1, templated near-duplicates removed | 30 (0 / 30) | Rules only | n/a | - | 0.0% [0.0, 11.4] | n/a | n/a |
 |  |  | TF-IDF + logistic regression | n/a | - | 6.7% [1.8, 21.3] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | n/a | - | 23.3% [11.8, 40.9] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | n/a | - | 3.3% [0.6, 16.7] | n/a | n/a |
 |  |  | MiniLM-L6 classifier | n/a | - | 0.0% [0.0, 11.4] | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | n/a | - | 0.0% [0.0, 11.4] | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | n/a | - | 0.0% [0.0, 11.4] | n/a | n/a |
 | Obfuscated attacks and benign | 53 (47 / 6) | Rules only | 68.1% [53.8, 79.6] | 89.4% | 0.0% [0.0, 39.0] | 0.810 | n/a |
 |  |  | TF-IDF + logistic regression | 97.9% [88.9, 99.6] | - | 16.7% [3.0, 56.4] | 0.979 | 0.975 |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 83.0% [69.9, 91.1] | - | 50.0% [18.8, 81.2] | 0.876 | 0.826 |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 29.8% [18.7, 44.0] | - | 0.0% [0.0, 39.0] | 0.459 | 0.826 |
 |  |  | MiniLM-L6 classifier | 100.0% [92.4, 100.0] | - | 16.7% [3.0, 56.4] | 0.989 | 0.961 |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 100.0% [92.4, 100.0] | - | 33.3% [9.7, 70.0] | 0.979 | 0.922 |
 |  |  | Sentinel (rules + classifier + decision) | 100.0% [92.4, 100.0] | 100.0% | 33.3% [9.7, 70.0] | 0.979 | 0.922 |
 | Plain attacks v1 (hand-written; informed the round-two rule fixes) | 26 (26 / 0) | Rules only | 50.0% [32.1, 67.9] | 69.2% | n/a | n/a | n/a |
 |  |  | TF-IDF + logistic regression | 69.2% [50.0, 83.5] | - | n/a | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 84.6% [66.5, 93.9] | - | n/a | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 61.5% [42.5, 77.6] | - | n/a | n/a | n/a |
 |  |  | MiniLM-L6 classifier | 92.3% [75.9, 97.9] | - | n/a | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 92.3% [75.9, 97.9] | - | n/a | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | 100.0% [87.1, 100.0] | 100.0% | n/a | n/a | n/a |
 | Plain attacks v2 (hand-written, frozen beforehand) | 30 (30 / 0) | Rules only | 26.7% [14.2, 44.4] | 33.3% | n/a | n/a | n/a |
 |  |  | TF-IDF + logistic regression | 80.0% [62.7, 90.5] | - | n/a | n/a | n/a |
-|  |  | MiniLM-L6 classifier | 93.3% [78.7, 98.2] | - | n/a | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 100.0% [88.6, 100.0] | - | n/a | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 56.7% [39.2, 72.6] | - | n/a | n/a | n/a |
+|  |  | MiniLM-L6 classifier | 90.0% [74.4, 96.5] | - | n/a | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 96.7% [83.3, 99.4] | - | n/a | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | 96.7% [83.3, 99.4] | 96.7% | n/a | n/a | n/a |
 | Everyday benign (Dolly-15k held out) | 992 (0 / 992) | Rules only | n/a | - | 0.0% [0.0, 0.4] | n/a | n/a |
 |  |  | TF-IDF + logistic regression | n/a | - | 0.0% [0.0, 0.4] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | n/a | - | 0.0% [0.0, 0.4] | n/a | n/a |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | n/a | - | 0.0% [0.0, 0.4] | n/a | n/a |
 |  |  | MiniLM-L6 classifier | n/a | - | 0.5% [0.2, 1.2] | n/a | n/a |
 |  |  | DeBERTa-v3-xsmall classifier (default) | n/a | - | 0.0% [0.0, 0.4] | n/a | n/a |
 |  |  | Sentinel (rules + classifier + decision) | n/a | - | 0.1% [0.0, 0.6] | n/a | n/a |
 | Indirect injection in documents (SYNTHETIC) | 80 (60 / 20) | Rules only | 76.7% [64.6, 85.6] | 91.7% | 0.0% [0.0, 16.1] | 0.868 | n/a |
 |  |  | TF-IDF + logistic regression | 36.7% [25.6, 49.3] | - | 5.0% [0.9, 23.6] | 0.530 | 0.849 |
-|  |  | MiniLM-L6 classifier | 50.0% [37.7, 62.3] | - | 5.0% [0.9, 23.6] | 0.659 | 0.935 |
+|  |  | ProtectAI v2 zero-shot (threshold 0.5) | 80.0% [68.2, 88.2] | - | 5.0% [0.9, 23.6] | 0.881 | 0.962 |
+|  |  | ProtectAI v2 zero-shot (balanced-target threshold) | 31.7% [21.3, 44.2] | - | 0.0% [0.0, 16.1] | 0.481 | 0.962 |
+|  |  | MiniLM-L6 classifier | 63.3% [50.7, 74.4] | - | 5.0% [0.9, 23.6] | 0.768 | 0.932 |
 |  |  | DeBERTa-v3-xsmall classifier (default) | 46.7% [34.6, 59.1] | - | 5.0% [0.9, 23.6] | 0.629 | 0.886 |
 |  |  | Sentinel (rules + classifier + decision) | 91.7% [81.9, 96.4] | 98.3% | 5.0% [0.9, 23.6] | 0.948 | 0.886 |
 <!-- END:per_set -->
@@ -188,7 +214,7 @@ The indirect-injection set (documents and tool outputs containing planted instru
 
 ### How the model got here
 
-**Round one: out-of-distribution recall.** My first model caught only 35 to 40% of attacks from datasets it had never seen. I added augmentation (`src/sentinel/augment.py`: re-cased, re-punctuated, leetspeak, zero-width, homoglyph, spaced and base64 variants of attacks, attacks embedded in benign context, and benign text quoting attacks), two extra public datasets (PromptShield, Apache-2.0, a length-filtered sample; Lakera Gandalf, MIT, attacks only) and early stopping on an OOD-dev half of SPML. deepset stayed untouched; SPML was split once by a fixed seed into the OOD-dev half (selection only) and an OOD-test half (reported). Variants, compared on validation and OOD-dev only (300 attacks, so a few points of difference is noise):
+**Round one: out-of-distribution recall.** My first model caught only <!--v:first_ood_range-->35 to 40%<!--/v--> of attacks from datasets it had never seen. I added augmentation (`src/sentinel/augment.py`: re-cased, re-punctuated, leetspeak, zero-width, homoglyph, spaced and base64 variants of attacks, attacks embedded in benign context, and benign text quoting attacks), two extra public datasets (PromptShield, Apache-2.0, a length-filtered sample; Lakera Gandalf, MIT, attacks only) and early stopping on an OOD-dev half of SPML. deepset stayed untouched; SPML was split once by a fixed seed into the OOD-dev half (selection only) and an OOD-test half (reported). Variants, compared on validation and OOD-dev only (300 attacks, so a few points of difference is noise):
 
 <!-- BEGIN:ablation_round1 -->
 | Variant (round one; selection used validation + OOD-dev only) | Train rows | Epochs run | Val PR-AUC | OOD-dev PR-AUC | OOD-dev recall @ val 1% FPR | OOD-dev FPR | Val hard-benign FPR (19 items) |
@@ -202,14 +228,14 @@ The indirect-injection set (documents and tool outputs containing planted instru
 | DeBERTa-v3-xsmall, augmentation + extra data | 13270 | 5 | 0.9955 | 0.9275 | 53.0% | 0.0% | 0.0% |
 <!-- END:ablation_round1 -->
 
-Round one improved recall, but its validation guard on hard-benign text had only 19 examples, and on the 60-item hard-benign test set the round-one model blocked 8.3% of benign prompts (5 of 60; three of the five were one templated question). I rejected that model as the default.
+Round one improved recall, but its validation guard on hard-benign text had only <!--v:val_hb_old-->19<!--/v--> examples, and on the <!--v:hb_v1_n-->60<!--/v-->-item hard-benign test set the round-one model blocked <!--v:r1_v1_fpr-->8.3%<!--/v--> of benign prompts (<!--v:r1_v1_fp-->5<!--/v--> of <!--v:hb_v1_n-->60<!--/v-->; with templated near-duplicates removed, <!--v:r1_dedup_fp-->3<!--/v--> of <!--v:hb_v1_distinct_n-->30<!--/v--> distinct items). I rejected that model as the default.
 
 **Round two: fix the guard, then re-select.**
 
-- **A real hard-benign validation set.** I wrote 132 hand-written benign prompts that talk about, quote or mention injection (security questions, documentation and tutorial text, quoted attack strings inside analysis, classroom and policy text, code comments, support tickets, translation and summarisation requests that contain attack phrases as data, and ordinary uses of trigger words such as "bypass the cache"). Together with the 19 older ones the validation hard-benign set has 151 items. A separate 115-item set of the same kind went into training as hard negatives (repeated four times in training). No item is a near-duplicate (word-set similarity of 0.8 or more) of an item in another of these sets (`tests/test_frozen_v2.py` checks this).
-- **A rule fixed in advance.** The block threshold is the lowest threshold whose validation false-positive rate is at or below 2% on hard-benign text and 0.5% on everyday benign text (Dolly validation). Among models, the one with the best OOD-dev recall at that threshold is the default. Presets `strict`, `balanced` (this rule) and `permissive` are in the thresholds file and selectable with `SENTINEL_PRESET`.
-- **Fresh, frozen test sets.** Hard-benign v2 (91 items) and plain attacks v2 (30 items) were written and frozen (SHA-256 in `data/hand_written/FROZEN_V2.json`, checked by a test) before any round-two model was trained or run, and evaluated once at the end. I also report v1 with its templated near-duplicates removed (60 items collapse to 30 distinct ones).
-- **A rules gap, found from the plain-attack drop.** Round one lost four of the 26 plain attacks at the block decision (96.2% to 84.6%): a "repeat the words above" leak, a "two answers, a normal one and a jailbroken one" request, "stop being X, your new job is to ...", and "the previous rules were a test, the real rule is ...". Each is an ordinary override or leak that the rules layer should catch whatever the classifier thinks, so I fixed the patterns, not the strings: a new `LEK-005`, `OVR-007` and `OVR-008`, and `JBK-003` raised to high severity, each with positive and negative tests. Because those 26 items informed the fixes they are no longer a clean number; plain attacks v2 is.
+- **A real hard-benign validation set.** I wrote <!--v:val_hb_new-->132<!--/v--> hand-written benign prompts that talk about, quote or mention injection (security questions, documentation and tutorial text, quoted attack strings inside analysis, classroom and policy text, code comments, support tickets, translation and summarisation requests that contain attack phrases as data, and ordinary uses of trigger words such as "bypass the cache"). Together with the 19 older ones the validation hard-benign set has <!--v:val_hb_total-->151<!--/v--> items. A separate <!--v:hn_train_n-->115<!--/v-->-item set of the same kind went into training as hard negatives (repeated <!--v:hn_repeat-->4)<!--/v--> times in training). No item is a near-duplicate (word-set similarity of 0.8 or more) of an item in another of these sets (`tests/test_frozen_v2.py` checks this).
+- **A rule fixed in advance.** The block threshold is the lowest threshold whose validation false-positive rate is at or below <!--v:cap_hb-->2%<!--/v--> on hard-benign text and <!--v:cap_dolly-->0.5%<!--/v--> on everyday benign text (Dolly validation). Among models, the one with the best OOD-dev recall at that threshold is the default. Presets `strict`, `balanced` (this rule) and `permissive` are in the thresholds file and selectable with `SENTINEL_PRESET`.
+- **Fresh, frozen test sets.** Hard-benign v2 (<!--v:hb_v2_n-->91<!--/v--> items) and plain attacks v2 (<!--v:att_v2_n-->30<!--/v--> items) were written and frozen (SHA-256 in `data/hand_written/FROZEN_V2.json`, checked by a test) before any round-two model was trained or run, and evaluated once at the end. I also report v1 with its templated near-duplicates removed (<!--v:hb_v1_n-->60<!--/v--> items collapse to <!--v:hb_v1_distinct_n-->30<!--/v--> distinct ones).
+- **A rules gap, found from the plain-attack drop.** Round one did not block <!--v:plain_r1_missed-->4<!--/v--> of the <!--v:att_v1_n-->26<!--/v--> plain attacks (<!--v:plain_r1_tp-->22<!--/v--> blocked, <!--v:plain_r1-->84.6%<!--/v-->; the first model blocked <!--v:plain_first_tp-->25<!--/v-->, <!--v:plain_first-->96.2%<!--/v-->): a "repeat the words above" leak, a "two answers, a normal one and a jailbroken one" request, "stop being X, your new job is to ...", and "the previous rules were a test, the real rule is ...". Each is an ordinary override or leak that the rules layer should catch whatever the classifier thinks, so I fixed the patterns, not the strings: a new `LEK-005`, `OVR-007` and `OVR-008`, and `JBK-003` raised to high severity, each with positive and negative tests. Because those 26 items informed the fixes they are no longer a clean number; plain attacks v2 is.
 
 Selection among the round-two candidates (validation and OOD-dev only, nothing else consulted):
 
@@ -217,8 +243,7 @@ Selection among the round-two candidates (validation and OOD-dev only, nothing e
 | Model (round two, same training data) | Train rows | Epochs run | Val PR-AUC | OOD-dev PR-AUC | Balanced block threshold | OOD-dev recall at it | OOD-dev FPR | Val hard-benign FPR | Val everyday FPR | OOD-dev recall at 1% / 2% / 5% hard-benign val FPR | Selected |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | DeBERTa-v3-xsmall classifier | 13730 | 5 | 0.9950 | 0.9416 | 0.975 | 52.3% | 1.0% | 2.0% (n=151) | 0.0% | 51% / 52% / 67% | yes |
-| MiniLM-L6 classifier | 13730 | 5 | 0.9959 | 0.9289 | 0.954 | 36.3% | 0.3% | 1.3% (n=151) | 0.3% | 34% / 56% / 63% |  |
-| Comparison only: round-one DeBERTa (round-one data), re-scored on the round-two validation set | 13270 | 5 | 0.9873 | 0.9275 | 0.995 | 36.0% | 0.0% | 2.0% (n=151) | 0.0% | 35% / 36% / 42% |  |
+| MiniLM-L6 classifier | 13730 | 5 | 0.9950 | 0.9225 | 0.978 | 34.0% | 0.0% | 0.7% (n=151) | 0.3% | 38% / 39% / 50% |  |
 <!-- END:ablation -->
 
 The first model, round one as published, and round two, on the same current test splits ("not run" means that model was never scored on that set; round one was scored on the new sets afterwards with its published thresholds and the current rules, using `scripts/score_snapshot.py`):
@@ -245,11 +270,11 @@ The first model, round one as published, and round two, on the same current test
 | deepset benign | 1.5% (6/399) | 1.0% (4/399) | 1.0% (4/399) | 399 |
 <!-- END:before_after -->
 
-**Honest reading.** Round two fixed what round one broke. Hard-benign false blocks went from 16.5% (15 of 91) on the frozen v2 set for the round-one model to 1.1% (1 of 91), out-of-distribution recall did not give back its round-one gain and rose on deepset, and the plain attacks the rules were missing are caught. The gains are measured on small sets, so read the intervals: v2 hard-benign has 91 items, so even a true 2% rate would show 0 to 5 errors, and plain attacks v2 has 30. Hard-benign v2 and v1 are written by the same person who wrote the validation and training hard negatives, so a shared style is likely; they are not independent of my taste. Recall at this operating point is still about half of the attacks that other datasets contain; counting a flag as a catch raises it to roughly 70%, but flagged prompts still reach the model.
+**Honest reading.** Round two fixed what round one broke. Hard-benign false blocks went from <!--v:r1_v2_fpr-->16.5%<!--/v--> (<!--v:r1_v2_fp-->15<!--/v--> of <!--v:hb_v2_n-->91<!--/v-->) on the frozen v2 set for the round-one model to <!--v:r2_v2_fpr-->1.1%<!--/v--> (<!--v:r2_v2_fp-->1<!--/v--> of <!--v:hb_v2_n-->91<!--/v-->), out-of-distribution recall did not give back its round-one gain and rose on deepset, and the plain attacks the rules were missing are caught. The gains are measured on small sets, so read the intervals: v2 hard-benign has <!--v:hb_v2_n-->91<!--/v--> items and plain attacks v2 has <!--v:att_v2_n-->30<!--/v-->. Hard-benign v2 and v1 are written by the same person who wrote the validation and training hard negatives, so a shared style is likely; they are not independent of my taste. Recall at this operating point is still about half of the attacks that other datasets contain; counting a flag as a catch raises it to <!--v:deepset_flag-->72%<!--/v--> on deepset and <!--v:spml_flag-->70%<!--/v--> on SPML, but flagged prompts still reach the model.
 
 #### Operating curve
 
-Each model's thresholds at 1%, 2% and 5% false-positive rate on the validation hard-benign set, and what they do on every test set (classifier score only; the full pipeline also lets high-severity rules block, which is why its recall in the headline table is higher):
+Each model's thresholds at <!--v:levels-->1%, 2% and 5%<!--/v--> false-positive rate on the validation hard-benign set, and what they do on every test set (classifier score only; the full pipeline also lets high-severity rules block, which is why its recall in the headline table is higher):
 
 <!-- BEGIN:operating -->
 | Model | Val hard-benign FPR | Threshold | Recall deepset | Recall SPML test | Recall in-dist | Recall plain v2 | Recall obfuscated | Recall indirect (synth.) | FPR hard v2 | FPR hard v1 | FPR v1 distinct | FPR everyday |
@@ -257,9 +282,9 @@ Each model's thresholds at 1%, 2% and 5% false-positive rate on the validation h
 | DeBERTa-v3-xsmall classifier (default) | 1% | 0.977 | 43% | 51% | 94% | 93% | 100% | 47% | 1.1% (1/91) | 0.0% (0/60) | 0.0% (0/30) | 0.0% (0/992) |
 |  | 2% | 0.975 | 43% | 54% | 94% | 97% | 100% | 47% | 1.1% (1/91) | 0.0% (0/60) | 0.0% (0/30) | 0.0% (0/992) |
 |  | 5% | 0.619 | 61% | 67% | 98% | 97% | 100% | 73% | 3.3% (3/91) | 10.0% (6/60) | 10.0% (3/30) | 1.0% (10/992) |
-| MiniLM-L6 classifier | 1% | 0.964 | 31% | 36% | 91% | 87% | 100% | 48% | 1.1% (1/91) | 0.0% (0/60) | 0.0% (0/30) | 0.3% (3/992) |
-|  | 2% | 0.794 | 49% | 57% | 96% | 93% | 100% | 80% | 7.7% (7/91) | 0.0% (0/60) | 0.0% (0/30) | 0.7% (7/992) |
-|  | 5% | 0.255 | 59% | 62% | 98% | 93% | 100% | 93% | 7.7% (7/91) | 1.7% (1/60) | 3.3% (1/30) | 1.2% (12/992) |
+| MiniLM-L6 classifier | 1% | 0.969 | 42% | 39% | 94% | 90% | 100% | 75% | 4.4% (4/91) | 3.3% (2/60) | 3.3% (1/30) | 0.6% (6/992) |
+|  | 2% | 0.961 | 46% | 40% | 94% | 93% | 100% | 78% | 5.5% (5/91) | 5.0% (3/60) | 6.7% (2/30) | 0.6% (6/992) |
+|  | 5% | 0.696 | 58% | 49% | 96% | 93% | 100% | 88% | 8.8% (8/91) | 8.3% (5/60) | 10.0% (3/30) | 1.4% (14/992) |
 | TF-IDF + logistic regression | 1% | 0.905 | 15% | 9% | 86% | 73% | 96% | 32% | 3.3% (3/91) | 0.0% (0/60) | 0.0% (0/30) | 0.0% (0/992) |
 |  | 2% | 0.863 | 18% | 11% | 89% | 80% | 98% | 37% | 5.5% (5/91) | 5.0% (3/60) | 6.7% (2/30) | 0.0% (0/992) |
 |  | 5% | 0.822 | 21% | 13% | 90% | 83% | 98% | 47% | 6.6% (6/91) | 8.3% (5/60) | 10.0% (3/30) | 0.2% (2/992) |
@@ -276,6 +301,32 @@ The full pipeline under the three presets:
 | strict | 52% / 69% | 51% / 67% | 93% / 97% | 1.1% (1/91) | 0.0% (0/60) | 0.0% (0/30) | 0.1% (1/992) |
 | permissive | 59% / 79% | 60% / 75% | 97% / 97% | 2.2% (2/91) | 0.0% (0/60) | 0.0% (0/30) | 0.6% (6/992) |
 <!-- END:presets -->
+
+### Comparison with a public detector
+
+ProtectAI's `deberta-v3-base-prompt-injection-v2` (<!--v:params_protectai-->184M<!--/v--> parameters, Apache-2.0 on its model card, revision `<!--v:protectai_rev-->90c9989b<!--/v-->`), run zero-shot on exactly the same test sets, on the same GPU in float32. It was never trained or calibrated on my data. I show it at its default threshold of 0.5 and at the threshold that matches my own false-positive target (the same `balanced` rule, applied to its scores on my validation split). `sentinel eval --with-protectai` reproduces this (it downloads about 0.7 GB); the comparison was added after my own model and thresholds were fixed, so it influenced none of my choices.
+
+<!-- BEGIN:protectai -->
+| Attack set (recall) | Sentinel (rules + classifier + decision) | DeBERTa-v3-xsmall classifier (default) | ProtectAI v2 zero-shot (threshold 0.5) | ProtectAI v2 zero-shot (balanced-target threshold) |
+|---|---|---|---|---|
+| In-distribution | 94.5% | 94.3% | 88.4% | 49.8% |
+| deepset (OOD) | 53.6% | 43.3% | 41.0% | 7.7% |
+| SPML OOD-test | 54.3% | 54.3% | 99.3% | 86.7% |
+| Plain attacks v2 | 96.7% | 96.7% | 100.0% | 56.7% |
+| Obfuscated | 100.0% | 100.0% | 83.0% | 29.8% |
+| Indirect (SYNTHETIC) | 91.7% | 46.7% | 80.0% | 31.7% |
+
+| Benign set (false-positive rate) | Sentinel (rules + classifier + decision) | DeBERTa-v3-xsmall classifier (default) | ProtectAI v2 zero-shot (threshold 0.5) | ProtectAI v2 zero-shot (balanced-target threshold) |
+|---|---|---|---|---|
+| Hard-benign v2 | 1.1% (1/91) | 1.1% (1/91) | 37.4% (34/91) | 4.4% (4/91) |
+| Hard-benign v1 | 0.0% (0/60) | 0.0% (0/60) | 21.7% (13/60) | 1.7% (1/60) |
+| Hard-benign v1, distinct | 0.0% (0/30) | 0.0% (0/30) | 23.3% (7/30) | 3.3% (1/30) |
+| Everyday benign | 0.1% (1/992) | 0.0% (0/992) | 0.0% (0/992) | 0.0% (0/992) |
+| deepset benign | 1.0% (4/399) | 1.0% (4/399) | 1.0% (4/399) | 0.0% (0/399) |
+| SPML benign | 0.0% (0/297) | 0.0% (0/297) | 8.1% (24/297) | 0.0% (0/297) |
+<!-- END:protectai -->
+
+Read it neutrally. Where ProtectAI is better, it is clearly better: on SPML it recalls <!--v:pre_spml_balanced-->87%<!--/v--> of attacks at the balanced-target threshold (and <!--v:pre_spml_default-->99%<!--/v--> at its default) against my <!--v:spml_block-->54%<!--/v-->. Its default threshold, however, blocks <!--v:pre_hb_v2_default-->37%<!--/v--> of the hard-benign v2 prompts (the over-defence problem this project is about), and at a threshold matched to a low hard-benign false-positive rate it blocks <!--v:pre_hb_v2_balanced-->4.4%<!--/v--> of them and recalls far less on deepset, plain attacks, obfuscated and indirect injection than Sentinel does. Caveats: its model card lists `jackhhao/jailbreak-classification` among its training data, which is also part of my training data and my in-distribution test, so in-distribution numbers are not independent; I did not check its other training sets against SPML, deepset or my test sets, so overlap there is unknown; SPML is the set where a text-length shortcut separates the classes (see the shortcut check), which may help any model trained on similar data; and every difference is measured on small sets with wide intervals.
 
 ### Multilingual
 
@@ -311,13 +362,13 @@ Chosen on the validation split only. Rule, fixed before the round-two models wer
 | Path | p50 (ms) | p95 (ms) |
 |---|---|---|
 | Rules only | 0.2 | 1.7 |
-| Classifier, one prompt at a time | 53.1 | 103.4 |
-| Full Sentinel, one prompt | 49.9 | 135.7 |
-| TF-IDF + LR | 0.9 | 3.8 |
+| Classifier, one prompt at a time | 70.2 | 145.3 |
+| Full Sentinel, one prompt | 73.0 | 174.3 |
+| TF-IDF + LR | 0.9 | 2.0 |
 
-CPU, classifier in batches of 64: 79.9 ms per prompt. CPU figures: 3 torch threads, float32, system-wide CPU utilisation 33% just before the run. Busy machines inflate them: treat as an upper-bound ballpark unless the load is low.
+CPU, classifier in batches of 64: 109.6 ms per prompt. CPU figures: 3 torch threads, float32, system-wide CPU utilisation 74% just before the run. Busy machines inflate them: treat as an upper-bound ballpark unless the load is low.
 
-GPU (cuda, float32) for comparison: classifier 66.5 ms p50 / 85.0 ms p95 per prompt, full Sentinel 63.2 / 103.9 ms, batches of 64: 2.8 ms per prompt.
+GPU (cuda, float32) for comparison: classifier 31.1 ms p50 / 44.0 ms p95 per prompt, full Sentinel 32.4 / 49.0 ms, batches of 64: 3.0 ms per prompt.
 <!-- END:latency -->
 
 ### Training
@@ -329,12 +380,12 @@ GPU (cuda, float32) for comparison: classifier 66.5 ms p50 / 85.0 ms p95 per pro
   - epoch 3: train loss 0.031, validation PR-AUC 0.9960, ROC-AUC 0.9971
   - epoch 4: train loss 0.018, validation PR-AUC 0.9963, ROC-AUC 0.9975
   - epoch 5: train loss 0.008, validation PR-AUC 0.9947, ROC-AUC 0.9965
-- **Compared: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 13730 training rows, 1737 validation rows; 6 epochs at most, lr 8e-05, batch 16, max length 256, seed 42; 292 s of training.
-  - epoch 1: train loss 0.225, validation PR-AUC 0.9921, ROC-AUC 0.9951
-  - epoch 2: train loss 0.062, validation PR-AUC 0.9902, ROC-AUC 0.9943
-  - epoch 3: train loss 0.026, validation PR-AUC 0.9961, ROC-AUC 0.9976
-  - epoch 4: train loss 0.015, validation PR-AUC 0.9933, ROC-AUC 0.9964
-  - epoch 5: train loss 0.003, validation PR-AUC 0.9877, ROC-AUC 0.9941
+- **Compared: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 13730 training rows, 1737 validation rows; 6 epochs at most, lr 8e-05, batch 16, max length 256, seed 42; 136 s of training.
+  - epoch 1: train loss 0.225, validation PR-AUC 0.9911, ROC-AUC 0.9944
+  - epoch 2: train loss 0.059, validation PR-AUC 0.9910, ROC-AUC 0.9944
+  - epoch 3: train loss 0.028, validation PR-AUC 0.9952, ROC-AUC 0.9968
+  - epoch 4: train loss 0.010, validation PR-AUC 0.9932, ROC-AUC 0.9955
+  - epoch 5: train loss 0.005, validation PR-AUC 0.9930, ROC-AUC 0.9962
 - Selection rule, fixed before the round-two models were trained: each model gets its `balanced` block threshold (validation hard-benign FPR at most 2%, everyday-benign at most 0.5%); the model with the best OOD-dev recall at that threshold is the default. See the selection table.
 - CPU training time, **estimate** for `microsoft/deberta-v3-xsmall`: `scripts/bench_cpu_train.py` timed 12 real steps at 2.16 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 23% just before the run), which extrapolates to about 150.9 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
 - CPU training time, **estimate** for `sentence-transformers/all-MiniLM-L6-v2`: `scripts/bench_cpu_train.py` timed 12 real steps at 0.85 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 25% just before the run), which extrapolates to about 59.2 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
@@ -344,17 +395,16 @@ GPU (cuda, float32) for comparison: classifier 66.5 ms p50 / 85.0 ms p95 per pro
 ### Errors
 
 <!-- BEGIN:errors -->
-Sentinel blocked 16 benign test prompts and let 60 attacks through (first 60 of each are stored in `docs/data/eval.json` under `errors`).
+Across the reported test sets (OOD-dev and the de-duplicated v1 subset excluded), Sentinel blocked 16 benign prompts and let 174 attacks through without even a flag. Up to 60 examples of each are stored in `docs/data/eval.json` under `errors` (16 and 60 stored).
 <!-- END:errors -->
 
 ### What was not run
 
-- **No comparison against a public detector.** I planned to compare against ProtectAI's `deberta-v3-base-prompt-injection-v2`, but it is a 0.7 GB download that I chose not to make, so there is no such comparison and no number for it. The baselines are rules only and TF-IDF + logistic regression.
 - **The proxy has only been exercised against a stubbed upstream** (an `httpx` mock transport in the tests). I did not point it at a real hosted model.
 
 ## Design decisions
 
-- **Rules and a classifier, deliberately.** Rules are transparent and catch known phrasings with near-zero latency; the classifier generalises to paraphrases. The decision layer uses both: it blocks on a high classifier score, or on a high-severity rule (one level lower when the match sits inside a quoted or "discussion" context) together with moderate classifier agreement, or on such a rule alone if the validation split says that policy scores better.
+- **Rules and a classifier, deliberately.** Rules are transparent and catch known phrasings with near-zero latency; the classifier generalises to paraphrases. The decision layer uses both: it blocks on a high classifier score, or on a high-severity rule (one level lower when the match sits inside a quoted or "discussion" context) together with moderate classifier agreement, or on such a rule alone (`rule_block_high`; it stays on in all three presets because on the validation set it did not push the hard-benign false-positive rate over the preset's cap).
 - **Thresholds from validation only**, by a stated rule on hard-benign and everyday-benign false-positive rates, with named presets (`strict`, `balanced`, `permissive`).
 - **Hard-benign text is a first-class test set**, because over-defence (blocking text that only discusses injection) is the failure users actually feel.
 - **Normalise before looking**, with an offset map, so obfuscation does not hide an attack and highlights still land on the original text.
@@ -365,12 +415,12 @@ Sentinel blocked 16 benign test prompts and let 60 attacks through (first 60 of 
 ## Limitations
 
 - **Not a guarantee.** A determined, adaptive attacker can rephrase, split an attack across turns or exploit what this model never saw. Treat Sentinel as one layer next to least-privilege tool access, output filtering and review.
-- **Out-of-distribution recall is still modest, in every language.** At the default operating point the full pipeline blocks about half of the attacks in deepset and in the SPML OOD-test half (see the headline table), and about 70% if flagged prompts count. German is no worse than English on deepset here, but both are low, and other languages were not tested. Looser presets buy recall at the price of false positives (presets table).
+- **Out-of-distribution recall is still modest, in every language.** At the default operating point the full pipeline blocks <!--v:deepset_block-->54%<!--/v--> of the attacks in deepset and <!--v:spml_block-->54%<!--/v--> in the SPML OOD-test half, and <!--v:deepset_flag-->72%<!--/v--> and <!--v:spml_flag-->70%<!--/v--> if flagged prompts count (headline table). German is no worse than English on deepset here, but both are low, and other languages were not tested. Looser presets buy recall at the price of false positives (presets table).
 - **SPML has a length shortcut**: a logistic regression on text length alone separates its attacks from its benign prompts almost perfectly (see the shortcut check above), so SPML recall says less than its size suggests.
 - **Small hand-written test sets** (hard-benign v1 and v2, obfuscated, plain attacks v1 and v2, indirect) give wide intervals, and the hard-benign sets are templated in places (hence the distinct-items figure). Hard-benign v1 is no longer a clean test (seen once), and plain attacks v1 informed rule fixes. The in-distribution test is partly synthetic data and flatters the model.
 - **Over-defence is reduced, not removed.** Some benign text that discusses injection will still be blocked; the errors list shows examples.
 - **Obfuscation coverage is finite**: the normaliser handles the common encodings listed above, not arbitrary ciphers or images.
-- **Latency numbers** were measured on a shared desktop CPU and are ballpark.
+- **Latency numbers** carry the machine load recorded when they were measured (see the latency table) and are ballpark; the GPU figure is for a GPU that other jobs may have been using.
 
 ## Tests and CI
 
@@ -379,7 +429,7 @@ pytest          # fast, offline; model tests are behind the `slow` marker (pytes
 ruff check .
 ```
 
-The suite covers the normaliser (each obfuscation type), every rule's positive and negative strings, decision-layer tables, the audit log, the FastAPI endpoints with a stub classifier, the proxy against a stubbed upstream (allow forwards, block refuses, streaming), metrics code on toy data, and dataset de-duplication and split leakage. GitHub Actions runs lint and the fast tests.
+The suite covers the normaliser (each obfuscation type), every rule's positive and negative strings, decision-layer tables, the audit log, the FastAPI endpoints with a stub classifier, the proxy against a stubbed upstream (allow forwards, block refuses, streaming), metrics code on toy data, dataset de-duplication and split leakage, the frozen v2 test sets (hash check), and consistency between the results files, the README and the model card (every generated table and every number quoted in prose, plus the commands the README shows). GitHub Actions runs lint and the fast tests.
 
 UI check (headless Chromium, 1440x900 and 390x844 touch, console errors and tap targets): `python scripts/ui_check.py live` against a running `sentinel serve`, or `python scripts/ui_check.py static` for `docs/` behind a plain static server.
 
@@ -389,7 +439,7 @@ UI check (headless Chromium, 1440x900 and 390x844 touch, console errors and tap 
 src/sentinel/      normalize, rules, classifier, decision, screen, audit, metrics, data, train, evaluate, cli, server/
 data/hand_written/ my own labelled sets (MIT) and the script that generates them
 docs/              the web UI (served locally and hosted statically), recorded eval data, notes/
-scripts/           UI check, render_docs
+scripts/           UI check, render_docs (tables and quoted numbers), ablation (model selection), score_snapshot, CPU training-time benchmark
 tests/
 ```
 

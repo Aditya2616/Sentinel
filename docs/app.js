@@ -277,6 +277,8 @@ const SYS = [
   ['rules_only', 'Rules only'],
   ['tfidf', 'TF-IDF + logistic regression'],
   ['classifier_alt', 'Other encoder alone'],
+  ['protectai', 'ProtectAI zero-shot'],
+  ['protectai_default', 'ProtectAI zero-shot, default threshold'],
 ];
 const SETS = ['indist', 'deepset', 'spml', 'obfuscated', 'attacks', 'attacks_v2', 'hard_benign_v2', 'hard_benign', 'hard_benign_dedup', 'dolly_benign', 'indirect'];
 const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)', obfuscated: 'Obfuscated', attacks: 'Plain attacks', hard_benign_v2: 'Hard benign v2 (frozen)', hard_benign: 'Hard benign v1 (seen once)', hard_benign_dedup: 'Hard benign v1, distinct', attacks_v2: 'Plain attacks v2', dolly_benign: 'Everyday benign', indirect: 'Indirect (synthetic)' };
@@ -353,7 +355,7 @@ function renderMetrics() {
   $('#shortcuts').textContent = `Shortcut checks: a length-only model scores ROC-AUC ${sh.length_only_roc_auc.indist.toFixed(2)} in-distribution, ${sh.length_only_roc_auc.deepset.toFixed(2)} on deepset and ${sh.length_only_roc_auc.spml.toFixed(2)} on SPML; TF-IDF trained on shuffled labels scores ${sh.label_shuffled_tfidf_roc_auc.indist.toFixed(2)} / ${sh.label_shuffled_tfidf_roc_auc.deepset.toFixed(2)} (chance is 0.50).`;
 }
 
-const SERIES = { classifier: ['Fine-tuned classifier', 'var(--lime)', ''], tfidf: ['TF-IDF + LR', 'var(--bone)', '5 4'], alt: ['Other encoder', 'var(--dim)', '1.5 3'] };
+const SERIES = { classifier: ['Fine-tuned classifier', 'var(--lime)', ''], tfidf: ['TF-IDF + LR', 'var(--bone)', '5 4'], alt: ['Other encoder', 'var(--dim)', '1.5 3'], protectai: ['ProtectAI v2, zero-shot', 'var(--mute)', '2 2'] };
 const curveState = { set: 'indist', zoom: false };
 function setupCurves() {
   const sel = $('#curve-set');

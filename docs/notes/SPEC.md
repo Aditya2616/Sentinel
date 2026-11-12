@@ -1,5 +1,7 @@
 # Sentinel: spec
 
+This is the plan I wrote before building. Where the build differs (decision thresholds are now validation-selected presets, the default encoder is chosen by a rule, a ProtectAI zero-shot row was added), the README and model card are authoritative.
+
 A guard that screens prompts and retrieved content for injection and jailbreak attempts before they reach a model. Python, HF Transformers, FastAPI. Port 8108. Repo `Sentinel`, MIT, Aditya Jain.
 
 ## Architecture
@@ -8,7 +10,7 @@ A guard that screens prompts and retrieved content for injection and jailbreak a
 flowchart LR
   P[Prompt / document / tool output] --> N[Normaliser]
   N --> R[Rules engine]
-  N --> C[Classifier: fine-tuned MiniLM-L6]
+  N --> C[Classifier: fine-tuned DeBERTa-v3-xsmall]
   R --> D[Decision layer]
   C --> D
   D -->|allow| U[Upstream model]
@@ -26,17 +28,17 @@ flowchart LR
 - `screen.py`: `Sentinel.screen(text, source="user"|"document"|"tool")`, returns a typed `Decision` (action, score, rules hit with spans on original text, normalisation notes, reason, latency). Documents/tool outputs use a stricter policy (any imperative-to-assistant pattern flags).
 - `audit.py`: append-only JSONL, one record per decision (timestamp, id, action, score, rule ids, source, text hash and truncated text; full text off by default for privacy), reader with filters.
 - `server/app.py` (FastAPI): `GET /health`, `POST /v1/screen`, `POST /v1/screen/batch`, `POST /v1/screen/document`, `GET /v1/audit`, `GET /v1/metrics` (recorded eval artefacts), `GET /v1/rules`, and the proxy `POST /v1/chat/completions` (OpenAI-compatible: screens the user/tool messages, on block returns an OpenAI-shaped refusal with `finish_reason: "content_filter"`, on allow/flag forwards to `UPSTREAM_BASE_URL` with the caller's key, streaming passthrough, adds `X-Sentinel-Decision` header). Upstream tested with a stubbed `httpx` transport; no real upstream exercised and README says so. Also serves the web UI.
-- `cli.py`: `sentinel screen "text"`, `sentinel serve`, `sentinel eval`, `sentinel train`, `sentinel fetch-model`.
-- `data/`: `build_dataset.py` (download, license-check, dedupe, split), `hand_written/*.jsonl` (my own sets, committed, small).
-- `train.py`: HF Transformers fine-tune (plain Trainer or PyTorch loop), CPU, seeded, logs to `runs/`. `eval.py`: all metrics below to `docs/data/eval.json` and PNGs. `export_demo.py`: builds the recorded stream.
+- `cli.py`: `sentinel screen "text"`, `sentinel serve`, `sentinel eval`, `sentinel train`, `sentinel data`, `sentinel export-rules`.
+- `data/`: `build_dataset.py` (download, licence-check, dedupe, split), `hand_written/*.jsonl` (my own sets, committed, small).
+- `train.py`: HF Transformers model with a plain PyTorch loop, GPU if available otherwise CPU, seeded. `evaluate.py` (`sentinel eval`): all metrics below plus the recorded stream, written to `docs/data/`.
 
-Weights are not committed: `sentinel fetch-model` downloads if I host a release asset later, otherwise `sentinel train` (minutes on CPU) reproduces them. Model card in `MODEL_CARD.md`.
+Weights are not committed: `sentinel train` reproduces them (timings are in the README). Model card in `MODEL_CARD.md`.
 
 ## Data and evaluation plan
 
 - Train: neuralchemy `core` train + jackhhao + hand-written train half (hard benign, obfuscated). Validation: neuralchemy validation + hand-written val. Dedup on normalised text across all splits first; report counts.
 - Test sets (never touched during training or threshold choice): (1) in-distribution neuralchemy test; (2) **OOD**: deepset/prompt-injections (all 662, EN/DE reported separately); (3) SPML user prompts (subsample); (4) hand-written **hard-benign test** (talks about injection) and **obfuscated attack test**; (5) realistic benign: dolly-15k sample (FPR only); (6) indirect set (documents/tool outputs, synthetic, small).
-- Systems compared on identical sets: rules only, TF-IDF+LR, fine-tuned MiniLM-L6, full Sentinel (ProtectAI v2 zero-shot was planned and not run) (rules + classifier + decision).
+- Systems compared on identical sets: rules only, TF-IDF+LR, fine-tuned DeBERTa-v3-xsmall and MiniLM-L6, full Sentinel (plus ProtectAI v2 zero-shot, added at the end) (rules + classifier + decision).
 - Metrics: precision, recall, F1, ROC-AUC, PR-AUC, ROC and PR curves, confusion matrix at the chosen thresholds, FPR on hard-benign and realistic benign with Wilson intervals (sets are small; I will show the intervals), calibration curve, per-category recall, p50/p95 latency per prompt on this CPU (single and batch, rules vs classifier vs total). Shortcut checks: length-only baseline, label-shuffle sanity check.
 - Negative results stay in the README (e.g. German OOD recall, obfuscation the rules miss).
 
@@ -60,7 +62,7 @@ Fast, offline: normaliser cases (each obfuscation type), every rule's positive/n
 
 - Pipeline reproducible from a clean clone: build data, train, eval, export demo, serve; commands in README.
 - All reported numbers come from `sentinel eval` on the machine I train on and match `docs/data/eval.json`.
-- Hard-benign FPR and the OOD results reported honestly with intervals; limitations section covers multilingual, adaptive attackers, no-guarantee nature, over-defense.
+- Hard-benign FPR and the OOD results reported honestly with intervals; limitations section covers multilingual, adaptive attackers, no-guarantee nature, over-defence.
 - Tests and ruff pass; UI screenshot-checked at both sizes, no console errors; static `docs/` works from a plain file server; clean history under Aditya's identity; no AI mentions anywhere.
 
 ## Risks

@@ -10,7 +10,7 @@ Research notes from before the build. Licences marked "API" were read from the H
 
 ## 2. Why classifiers over-trigger on benign text
 
-- **InjecGuard / PIGuard** (arXiv 2410.22770, ACL 2025, <https://huggingface.co/leolee99/PIGuard>) defines *over-defense*: guard models latch onto trigger words ("ignore", "bypass", "system prompt") and flag benign text. Their NotInject benchmark (339 benign samples, three difficulty tiers by trigger-word count) drops many open and commercial detectors toward ~60% accuracy, near chance, and names ProtectAI v2 as significantly over-defended. Their remedy (MOF) is to train so the model does not shortcut on trigger words.
+- **InjecGuard / PIGuard** (arXiv 2410.22770, ACL 2025, <https://huggingface.co/leolee99/PIGuard>) defines *over-defence*: guard models latch onto trigger words ("ignore", "bypass", "system prompt") and flag benign text. Their NotInject benchmark (339 benign samples, three difficulty tiers by trigger-word count) drops many open and commercial detectors toward ~60% accuracy, near chance, and names ProtectAI v2 as significantly over-defended. Their remedy (MOF) is to train so the model does not shortcut on trigger words.
 - **Implication for Sentinel:** the hard case is benign text *about* injection (security teaching, translation of "ignore" text, quoting an attack for analysis, ordinary "disregard the previous email"). I will (a) put a hand-written hard-benign set in training and a *separate* one in test, (b) report false-positive rate on it as a headline metric, (c) design the decision layer so a rule hit alone is a *flag* unless severity is high or the classifier agrees. NotInject itself is not used for training (I have not verified its licence; I will check before using it as an extra eval only).
 - Meta's Prompt Guard 2 card also says benign/malicious distribution shift hurts and recommends fine-tuning on domain data. It is gated under the Llama 4 community licence (API: `other`, gated manual), so **excluded from the repo and the default comparison**; it can be an optional local comparison if the user has access.
 
@@ -18,7 +18,7 @@ Research notes from before the build. Licences marked "API" were read from the H
 
 | Tool | Licence | Notes |
 |---|---|---|
-| ProtectAI `deberta-v3-base-prompt-injection-v2` | Apache-2.0 (API), 184M params | Binary injection classifier, base deberta-v3-base. Training data mix includes some non-commercial-risk sources per third-party notes; weights themselves Apache-2.0. Would have been a good comparison baseline (~0.7 GB download); I did not run it. Reported over-defense (InjecGuard). |
+| ProtectAI `deberta-v3-base-prompt-injection-v2` | Apache-2.0 (API), 184M params | Binary injection classifier, base deberta-v3-base. Training data mix includes some non-commercial-risk sources per third-party notes; weights themselves Apache-2.0. Used as a zero-shot comparison row (see the README); weights are not redistributed. Reported over-defence (InjecGuard). |
 | Meta Prompt Guard 2 (22M / 86M) | Llama 4 community, gated | Excluded, see above. |
 | LLM Guard (Protect AI) | MIT (secondary sources) | Scanner library, wraps the ProtectAI model. Reference design for input/output scanners with risk scores. |
 | Rebuff | open source | Heuristics + LLM check + vector DB of known attacks + canary tokens. Canary tokens are a worthwhile idea for prompt-leak detection but need the downstream model, so out of scope (noted in SPEC as future work). |
@@ -47,7 +47,7 @@ Known issues to handle: duplicate and near-duplicate prompts across sources (ded
 
 Candidates (licences from API): `microsoft/deberta-v3-xsmall` (MIT, ~22M backbone + 48M embeddings), `microsoft/deberta-v3-small` (MIT, ~44M backbone), `microsoft/MiniLM-L12-H384-uncased` (MIT, 33M), `answerdotai/ModernBERT-base` (Apache-2.0, 149M), `distilbert-base-uncased` (Apache-2.0, 67M), `google/electra-small-discriminator` (Apache-2.0, 14M). DeBERTa-v3 beats MiniLMv2-small by ~1.2 pts on MNLI and beats ModernBERT on sample efficiency in a controlled comparison (<https://arxiv.org/abs/2504.08716>); ProtectAI and deepset both chose DeBERTa-v3 for this task.
 
-**Original choice: `deberta-v3-xsmall`.** On the CPU I train on, a DeBERTa step took far too long, so the shipped model is `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 22M parameters) fine-tuned as a classifier; see `MODEL_CARD.md`. Baselines: rules only, and TF-IDF (word + char n-grams) + logistic regression. A comparison against the ProtectAI v2 detector was planned and not run.
+**Original choice: `deberta-v3-xsmall`.** On a heavily loaded CPU a DeBERTa step was too slow, so I briefly used `sentence-transformers/all-MiniLM-L6-v2` and then trained both encoders on a GPU. The default is chosen by a rule on validation data (see `MODEL_CARD.md` and the README), and is currently DeBERTa. Baselines: rules only, and TF-IDF (word + char n-grams) + logistic regression. A zero-shot comparison against the ProtectAI v2 detector was run at the end (see the README).
 
 Environment checked: transformers 5.7.0, torch 2.11.0+cpu, scikit-learn 1.8.0, fastapi 0.136.1, 12 CPU threads. Transformers 5 API changes (Trainer args, tokenizer behaviour) must be verified against installed docs during build; I will write a plain PyTorch loop if Trainer causes friction.
 

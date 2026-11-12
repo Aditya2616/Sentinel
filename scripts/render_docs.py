@@ -31,7 +31,7 @@ LABEL = {
     "indirect": "Indirect injection in documents (SYNTHETIC)",
 }
 LBL = E["meta"].get("system_labels", {})
-SYS = {k: LBL[k] for k in ("rules_only", "tfidf", "classifier_alt", "classifier", "sentinel") if k in R and k in LBL}
+SYS = {k: LBL[k] for k in ("rules_only", "tfidf", "protectai_default", "protectai", "classifier_alt", "classifier", "sentinel") if k in R and k in LBL}
 
 
 def pc(x, d=1):
@@ -277,27 +277,158 @@ def ablation_round1() -> str:
 
 def errors() -> str:
     e = E["errors"]
-    return f"Sentinel blocked {len(e['false_positives'])} benign test prompts and let {len(e['false_negatives'])} attacks through (first 60 of each are stored in `docs/data/eval.json` under `errors`)."
+    skip = ("spml_dev", "hard_benign_dedup")
+    sets = [n for n in R["sentinel"] if n not in skip]
+    fp = sum(R["sentinel"][n]["confusion"]["fp"] for n in sets)
+    missed = sum(R["sentinel"][n]["alert"]["confusion"]["fn"] for n in sets if "alert" in R["sentinel"][n])
+    return (
+        f"Across the reported test sets (OOD-dev and the de-duplicated v1 subset excluded), Sentinel blocked {fp} benign prompts and let {missed} attacks through without even a flag. "
+        f"Up to 60 examples of each are stored in `docs/data/eval.json` under `errors` ({len(e['false_positives'])} and {len(e['false_negatives'])} stored)."
+    )
+
+
+def protectai() -> str:
+    """The zero-shot public detector beside Sentinel, same sets, same device and dtype (float32, GPU)."""
+    if "protectai" not in R:
+        return "Not run in this evaluation."
+    rows = [("indist", "In-distribution"), ("deepset", "deepset (OOD)"), ("spml", "SPML OOD-test"), ("attacks_v2", "Plain attacks v2"), ("obfuscated", "Obfuscated"), ("indirect", "Indirect (SYNTHETIC)")]
+    brows = [("hard_benign_v2", "Hard-benign v2"), ("hard_benign", "Hard-benign v1"), ("hard_benign_dedup", "Hard-benign v1, distinct"), ("dolly_benign", "Everyday benign"), ("deepset", "deepset benign"), ("spml", "SPML benign")]
+    keys = ("sentinel", "classifier", "protectai_default", "protectai")
+    out = ["| Attack set (recall) | " + " | ".join(LBL[k] for k in keys) + " |", "|---|" + "---|" * len(keys)]
+    for n, lab in rows:
+        out.append(f"| {lab} | " + " | ".join(pc(R[k][n]["recall"]) for k in keys) + " |")
+    out += ["", "| Benign set (false-positive rate) | " + " | ".join(LBL[k] for k in keys) + " |", "|---|" + "---|" * len(keys)]
+    for n, lab in brows:
+        out.append(f"| {lab} | " + " | ".join(f"{pc(R[k][n]['fpr'])} ({R[k][n]['confusion']['fp']}/{R[k][n]['n_neg']})" for k in keys) + " |")
+    return NL.join(out)
+
+
+def values() -> dict[str, str]:
+    """Every number quoted in prose, computed from the results and data files. Prose uses <!--v:key-->text<!--/v-->."""
+    import sys
+
+    sys.path.insert(0, str(ROOT / "src"))
+    from sentinel.evaluate import PRESET_CAPS
+
+    S, M = R["sentinel"], E["meta"]
+    B1, B2 = _load("baseline_v1.json"), _load("baseline_round1.json")
+    hand = ROOT / "data" / "hand_written"
+
+    def lines(name: str) -> int:
+        return sum(1 for ln in (hand / name).read_text(encoding="utf-8").split(NL) if ln.strip())
+
+    def cnt(B, n, k="fp"):
+        return str(B[n]["confusion"][k])
+
+    tl, al = M["training_log"], M.get("alt_training_log") or {}
+    train_py = (ROOT / "src" / "sentinel" / "train.py").read_text(encoding="utf-8")
+    cap = PRESET_CAPS["balanced"]["block"]
+    ops = E["operating_table"]["levels"]
+    pre = R.get("protectai")
+    return {
+        "n_rules": str(len(json.loads((DATA / "rules.json").read_text(encoding="utf-8")))),
+        "first_ood_range": f"{B1['deepset']['recall'] * 100:.0f} to {B1['spml']['recall'] * 100:.0f}%",
+        "val_hb_old": str(lines("hard_benign_val.jsonl")),
+        "val_hb_new": str(lines("hard_neg_val.jsonl")),
+        "val_hb_total": str(M["val_hard_benign_n"]),
+        "hn_train_n": str(lines("hard_neg_train.jsonl")),
+        "hn_repeat": train_py.split("hw_hn_train=")[1].split(chr(34))[0],
+        "hb_v1_n": str(S["hard_benign"]["n"]),
+        "hb_v1_distinct_n": str(S["hard_benign_dedup"]["n"]),
+        "hb_v2_n": str(S["hard_benign_v2"]["n"]),
+        "att_v1_n": str(S["attacks"]["n"]),
+        "att_v2_n": str(S["attacks_v2"]["n"]),
+        "r1_v1_fpr": pc(B2["hard_benign"]["fpr"]),
+        "r1_v1_fp": cnt(B2, "hard_benign"),
+        "r1_dedup_fp": cnt(B2, "hard_benign_dedup"),
+        "r1_v2_fpr": pc(B2["hard_benign_v2"]["fpr"]),
+        "r1_v2_fp": cnt(B2, "hard_benign_v2"),
+        "r2_v2_fpr": pc(S["hard_benign_v2"]["fpr"]),
+        "r2_v2_fp": cnt(S, "hard_benign_v2"),
+        "r2_v1_fp": cnt(S, "hard_benign"),
+        "plain_first": pc(B1["attacks"]["recall"]),
+        "plain_first_tp": cnt(B1, "attacks", "tp"),
+        "plain_r1": pc(B2["attacks"]["recall"]),
+        "plain_r1_tp": cnt(B2, "attacks", "tp"),
+        "plain_r1_missed": cnt(B2, "attacks", "fn"),
+        "plain_r2": pc(S["attacks"]["recall"]),
+        "cap_hb": f"{cap[0] * 100:g}%",
+        "cap_dolly": f"{cap[1] * 100:g}%",
+        "levels": ", ".join(f"{x * 100:g}%" for x in ops[:-1]) + f" and {ops[-1] * 100:g}%",
+        "deepset_block": pc(S["deepset"]["recall"], 0),
+        "spml_block": pc(S["spml"]["recall"], 0),
+        "deepset_flag": pc(S["deepset"]["alert"]["recall"], 0),
+        "spml_flag": pc(S["spml"]["alert"]["recall"], 0),
+        "pre_spml_default": pc(R["protectai_default"]["spml"]["recall"], 0) if pre else "n/a",
+        "pre_spml_balanced": pc(pre["spml"]["recall"], 0) if pre else "n/a",
+        "pre_hb_v2_default": pc(R["protectai_default"]["hard_benign_v2"]["fpr"], 0) if pre else "n/a",
+        "pre_hb_v2_balanced": pc(pre["hard_benign_v2"]["fpr"], 1) if pre else "n/a",
+        "r2_spml_fpr_note": pc(S["spml"]["fpr"], 1),
+        "params_default": f"{M['n_params']['classifier'] / 1e6:.1f}M",
+        "params_alt": f"{M['n_params']['classifier_alt'] / 1e6:.1f}M",
+        "params_protectai": f"{M['n_params'].get('protectai', 0) / 1e6:.0f}M",
+        "protectai_rev": (M.get("external_comparison") or {}).get("revision", "")[:8],
+        "max_len": str(tl["args"]["max_length"]),
+        "lr_default": f"{tl['args']['lr']:g}",
+        "lr_alt": f"{al.get('args', {}).get('lr', 0):g}",
+        "epochs_max": str(tl["args"]["epochs"]),
+        "batch": str(tl["args"]["batch_size"]),
+    }
+
+
+MARK = re.compile(r"<!--v:(\w+)-->(.*?)<!--/v-->", re.S)
+
+
+def substitute(s: str) -> str:
+    v = values()
+
+    def sub(m: re.Match) -> str:
+        if m.group(1) not in v:
+            raise KeyError(f"unknown value key {m.group(1)!r}")
+        return f"<!--v:{m.group(1)}-->{v[m.group(1)]}<!--/v-->"
+
+    return MARK.sub(sub, s)
 
 
 BLOCKS = {
+    "protectai": protectai,
     "headline": headline, "per_set": per_set, "language": language, "latency": latency, "thresholds": thresholds, "presets": presets, "training": training,
     "shortcuts": shortcuts, "errors": errors, "operating": operating, "before_after": before_after, "ablation": ablation, "ablation_round1": ablation_round1,
 }
 
 
-def fill(path: Path) -> None:
-    if not path.exists():
-        return
-    s = path.read_text(encoding="utf-8")
+def render(text: str) -> str:
     for name, fn in BLOCKS.items():
         pat = re.compile(rf"(<!-- BEGIN:{name} -->)(.*?)(<!-- END:{name} -->)", re.S)
         body = fn()
-        s = pat.sub(lambda m, body=body: f"{m.group(1)}{NL}{body}{NL}{m.group(3)}", s)
-    path.write_text(s, encoding="utf-8", newline=NL)
-    print("updated", path.name)
+        text = pat.sub(lambda m, body=body: f"{m.group(1)}{NL}{body}{NL}{m.group(3)}", text)
+    return substitute(text)
+
+
+DOCS = [ROOT / "README.md", ROOT / "MODEL_CARD.md"]
+
+
+def fill(path: Path) -> None:
+    if path.exists():
+        path.write_text(render(path.read_text(encoding="utf-8")), encoding="utf-8", newline=NL)
+        print("updated", path.name)
+
+
+def check() -> list[str]:
+    """Names of documents whose generated blocks or quoted numbers differ from the results files."""
+    bad = []
+    for path in DOCS:
+        if path.exists() and render(path.read_text(encoding="utf-8").replace(chr(13) + NL, NL)) != path.read_text(encoding="utf-8").replace(chr(13) + NL, NL):
+            bad.append(path.name)
+    return bad
 
 
 if __name__ == "__main__":
-    fill(ROOT / "README.md")
-    fill(ROOT / "MODEL_CARD.md")
+    import sys
+
+    if "--check" in sys.argv:
+        out_of_sync = check()
+        print("out of sync: " + ", ".join(out_of_sync) + " (run python scripts/render_docs.py)" if out_of_sync else "documents are in sync with docs/data")
+        sys.exit(1 if out_of_sync else 0)
+    for d in DOCS:
+        fill(d)

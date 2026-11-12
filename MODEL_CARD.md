@@ -4,12 +4,12 @@ A binary classifier that outputs the probability that a text contains a prompt-i
 
 ## Model
 
-- **Default:** `microsoft/deberta-v3-xsmall` (MIT, about 70M parameters including embeddings), fine-tuned as a two-class sequence classifier. Max length 256, lr 5e-5, batch 16, up to 6 epochs with early stopping on validation plus OOD-dev, float32.
-- **Compared:** `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 22M parameters), fine-tuned on the same data (lr 8e-5, otherwise the same). It is the other row in every results table.
-- **How the default was chosen:** by a rule fixed before the round-two models were trained, using validation data and an OOD-dev half of SPML only. Each model gets its `balanced` block threshold (the lowest threshold with validation hard-benign false-positive rate at most 2% and everyday-benign at most 0.5%); the model with the best OOD-dev recall at that threshold wins. DeBERTa won; the selection table below shows both.
-- **History, so that nothing is hidden:** I first planned DeBERTa, trained MiniLM when CPU training was too slow, then moved training to a GPU. The first MiniLM model was the default for a while. In round one, augmentation and extra data raised out-of-distribution recall but also raised false blocks on hard-benign text (8.3% on the 60-item v1 test set, which I looked at once). In round two I wrote a 132-item hard-benign validation set and a 115-item hard-negative training set, re-trained both encoders, and re-selected thresholds and the default by the rule above. Those v1 numbers are therefore not a clean test any more; hard-benign v2 (frozen before the round-two models were run) is.
+- **Default:** `microsoft/deberta-v3-xsmall` (MIT, <!--v:params_default-->70.8M<!--/v--> parameters including embeddings), fine-tuned as a two-class sequence classifier. Max length <!--v:max_len-->256<!--/v-->, lr <!--v:lr_default-->5e-05<!--/v-->, batch <!--v:batch-->16<!--/v-->, up to <!--v:epochs_max-->6<!--/v--> epochs with early stopping on validation plus OOD-dev, float32.
+- **Compared:** `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, <!--v:params_alt-->22.7M<!--/v--> parameters), fine-tuned on the same data (lr <!--v:lr_alt-->8e-05<!--/v-->, otherwise the same). It is the other row in every results table.
+- **How the default was chosen:** by a rule fixed before the round-two models were trained, using validation data and an OOD-dev half of SPML only. Each model gets its `balanced` block threshold (the lowest threshold with validation hard-benign false-positive rate at most <!--v:cap_hb-->2%<!--/v--> and everyday-benign at most <!--v:cap_dolly-->0.5%<!--/v-->); the model with the best OOD-dev recall at that threshold wins. DeBERTa won; the selection table below shows both.
+- **History, so that nothing is hidden:** I first planned DeBERTa, trained MiniLM when CPU training was too slow, then moved training to a GPU. The first MiniLM model was the default for a while. In round one, augmentation and extra data raised out-of-distribution recall but also raised false blocks on hard-benign text (<!--v:r1_v1_fpr-->8.3%<!--/v--> on the <!--v:hb_v1_n-->60<!--/v-->-item v1 test set, which I looked at once). In round two I wrote a <!--v:val_hb_new-->132<!--/v-->-item hard-benign validation set and a <!--v:hn_train_n-->115<!--/v-->-item hard-negative training set, re-trained both encoders, and re-selected thresholds and the default by the rule above. Those v1 numbers are therefore not a clean test any more; hard-benign v2 (frozen before the round-two models were run) is.
 - **Precision matters:** with the library versions here, DeBERTa's checkpoint loads in float16 by default and training in that dtype produced NaNs after the first optimiser step; the code loads in float32 explicitly.
-- **Input:** text after Sentinel's normaliser, truncated to 256 tokens at training time (the extra data is length-filtered to fit). At inference, longer inputs are scored in overlapping windows and the maximum is taken.
+- **Input:** text after Sentinel's normaliser, truncated to <!--v:max_len-->256<!--/v--> tokens at training time (the extra data is length-filtered to fit). At inference, longer inputs are scored in overlapping windows and the maximum is taken.
 - **Output:** a logit margin, converted to a probability with temperature scaling fitted on the validation split.
 - **Operating points:** `strict`, `balanced` (default) and `permissive`, stored with the model in `thresholds.json`; select with the `SENTINEL_PRESET` environment variable.
 
@@ -24,7 +24,7 @@ Downloaded by script at pinned revisions (`sentinel data`), never redistributed:
 | Hand-written sets in `data/hand_written/` | MIT | train, validation, test (separate halves) |
 | deepset/prompt-injections | Apache-2.0 | out-of-distribution test only, never used for any choice |
 | SPML Chatbot Prompt Injection | MIT | split once by a fixed seed: one half is OOD-dev (model selection only), the other half OOD-test (reported) |
-| Hand-written round-two sets in `data/hand_written/` (mine, MIT) | MIT | 132 hard-benign validation items and 115 hard-negative training items (repeated four times in training); the v2 test sets (91 hard-benign, 30 plain attacks) are frozen test data |
+| Hand-written round-two sets in `data/hand_written/` (mine, MIT) | MIT | <!--v:val_hb_new-->132<!--/v--> hard-benign validation items and <!--v:hn_train_n-->115<!--/v--> hard-negative training items (repeated <!--v:hn_repeat-->4)<!--/v--> times in training); the v2 test sets (<!--v:hb_v2_n-->91<!--/v--> hard-benign, <!--v:att_v2_n-->30<!--/v--> plain attacks) are frozen test data |
 | hendzh/PromptShield | Apache-2.0 (dataset card) | extra training data: a length-filtered sample (up to 2000 per class, at most 800 characters) of its train split |
 | Lakera/gandalf_ignore_instructions | MIT (dataset card) | extra training data: attacks only, all three splits |
 | Augmentation (`src/sentinel/augment.py`) | MIT (mine) | derived from the training rows only: obfuscated variants, attacks embedded in benign context, benign text quoting attacks |
@@ -41,12 +41,12 @@ Exact duplicates and near-duplicates (character n-gram TF-IDF cosine >= 0.9) bet
   - epoch 3: train loss 0.031, validation PR-AUC 0.9960, ROC-AUC 0.9971
   - epoch 4: train loss 0.018, validation PR-AUC 0.9963, ROC-AUC 0.9975
   - epoch 5: train loss 0.008, validation PR-AUC 0.9947, ROC-AUC 0.9965
-- **Compared: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 13730 training rows, 1737 validation rows; 6 epochs at most, lr 8e-05, batch 16, max length 256, seed 42; 292 s of training.
-  - epoch 1: train loss 0.225, validation PR-AUC 0.9921, ROC-AUC 0.9951
-  - epoch 2: train loss 0.062, validation PR-AUC 0.9902, ROC-AUC 0.9943
-  - epoch 3: train loss 0.026, validation PR-AUC 0.9961, ROC-AUC 0.9976
-  - epoch 4: train loss 0.015, validation PR-AUC 0.9933, ROC-AUC 0.9964
-  - epoch 5: train loss 0.003, validation PR-AUC 0.9877, ROC-AUC 0.9941
+- **Compared: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 13730 training rows, 1737 validation rows; 6 epochs at most, lr 8e-05, batch 16, max length 256, seed 42; 136 s of training.
+  - epoch 1: train loss 0.225, validation PR-AUC 0.9911, ROC-AUC 0.9944
+  - epoch 2: train loss 0.059, validation PR-AUC 0.9910, ROC-AUC 0.9944
+  - epoch 3: train loss 0.028, validation PR-AUC 0.9952, ROC-AUC 0.9968
+  - epoch 4: train loss 0.010, validation PR-AUC 0.9932, ROC-AUC 0.9955
+  - epoch 5: train loss 0.005, validation PR-AUC 0.9930, ROC-AUC 0.9962
 - Selection rule, fixed before the round-two models were trained: each model gets its `balanced` block threshold (validation hard-benign FPR at most 2%, everyday-benign at most 0.5%); the model with the best OOD-dev recall at that threshold is the default. See the selection table.
 - CPU training time, **estimate** for `microsoft/deberta-v3-xsmall`: `scripts/bench_cpu_train.py` timed 12 real steps at 2.16 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 23% just before the run), which extrapolates to about 150.9 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
 - CPU training time, **estimate** for `sentence-transformers/all-MiniLM-L6-v2`: `scripts/bench_cpu_train.py` timed 12 real steps at 0.85 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 25% just before the run), which extrapolates to about 59.2 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
@@ -89,8 +89,7 @@ Selection between the two encoders (validation and OOD-dev only):
 | Model (round two, same training data) | Train rows | Epochs run | Val PR-AUC | OOD-dev PR-AUC | Balanced block threshold | OOD-dev recall at it | OOD-dev FPR | Val hard-benign FPR | Val everyday FPR | OOD-dev recall at 1% / 2% / 5% hard-benign val FPR | Selected |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | DeBERTa-v3-xsmall classifier | 13730 | 5 | 0.9950 | 0.9416 | 0.975 | 52.3% | 1.0% | 2.0% (n=151) | 0.0% | 51% / 52% / 67% | yes |
-| MiniLM-L6 classifier | 13730 | 5 | 0.9959 | 0.9289 | 0.954 | 36.3% | 0.3% | 1.3% (n=151) | 0.3% | 34% / 56% / 63% |  |
-| Comparison only: round-one DeBERTa (round-one data), re-scored on the round-two validation set | 13270 | 5 | 0.9873 | 0.9275 | 0.995 | 36.0% | 0.0% | 2.0% (n=151) | 0.0% | 35% / 36% / 42% |  |
+| MiniLM-L6 classifier | 13730 | 5 | 0.9950 | 0.9225 | 0.978 | 34.0% | 0.0% | 0.7% (n=151) | 0.3% | 38% / 39% / 50% |  |
 <!-- END:ablation -->
 
 The first model, round one and round two, same test splits ("not run" means that model was never scored on that set):
@@ -152,8 +151,8 @@ Screening text before it is sent to a language model, as one layer among several
 - Training data is overwhelmingly English; recall on German is measurably worse (table above). Other languages were not tested.
 - Training data is partly synthetic, so in-distribution scores overstate real-world performance. Out-of-distribution recall and hard-benign false-positive rate are the numbers to trust more, and their intervals are wide because the test sets are small.
 - It can over-block benign text that discusses injection or contains trigger words. Sentinel's decision layer reduces this by treating quoted or discussed examples as lower severity, but does not eliminate it.
-- Fine-tuned on short texts (128 tokens); long documents rely on the windowing heuristic.
-- The comparison with a public third-party detector was not run.
+- Fine-tuned on texts truncated to <!--v:max_len-->256<!--/v--> tokens; long documents rely on the windowing heuristic.
+- The comparison with ProtectAI's public detector is zero-shot and was added after my model and thresholds were fixed; see the README for the table and its caveats (training-data overlap with `jackhhao/jailbreak-classification`, small sets).
 
 ## Licence
 

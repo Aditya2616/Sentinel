@@ -24,38 +24,18 @@
   "model": "sentence-transformers/all-MiniLM-L6-v2",
   "train_rows": 13730,
   "epochs_run": 5,
-  "val_pr_auc": 0.9959133595770878,
-  "dev_pr_auc": 0.9288916537565725,
-  "balanced_block_threshold": 0.9538399592296131,
-  "dev_recall_at_balanced": 0.36333333333333334,
-  "dev_fpr_at_balanced": 0.0033444816053511705,
-  "val_hard_benign_n": 151,
-  "val_hard_benign_fpr_at_balanced": 0.013245033112582781,
-  "val_everyday_fpr_at_balanced": 0.002506265664160401,
-  "dev_recall_at_hard_benign_val_fpr": {
-   "0.01": 0.34,
-   "0.02": 0.5566666666666666,
-   "0.05": 0.63
-  },
-  "selected": false
- },
- {
-  "variant": "Comparison only: round-one DeBERTa (round-one data), re-scored on the round-two validation set",
-  "model": "microsoft/deberta-v3-xsmall",
-  "train_rows": 13270,
-  "epochs_run": 5,
-  "val_pr_auc": 0.9872867280371868,
-  "dev_pr_auc": 0.927484804703737,
-  "balanced_block_threshold": 0.994531896098222,
-  "dev_recall_at_balanced": 0.36,
+  "val_pr_auc": 0.9949996072394734,
+  "dev_pr_auc": 0.9225399911348308,
+  "balanced_block_threshold": 0.9782128254837432,
+  "dev_recall_at_balanced": 0.34,
   "dev_fpr_at_balanced": 0.0,
   "val_hard_benign_n": 151,
-  "val_hard_benign_fpr_at_balanced": 0.019867549668874173,
-  "val_everyday_fpr_at_balanced": 0.0,
+  "val_hard_benign_fpr_at_balanced": 0.006622516556291391,
+  "val_everyday_fpr_at_balanced": 0.002506265664160401,
   "dev_recall_at_hard_benign_val_fpr": {
-   "0.01": 0.35333333333333333,
-   "0.02": 0.36,
-   "0.05": 0.4166666666666667
+   "0.01": 0.38,
+   "0.02": 0.3933333333333333,
+   "0.05": 0.49666666666666665
   },
   "selected": false
  }

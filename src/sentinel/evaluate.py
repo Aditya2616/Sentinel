@@ -55,7 +55,7 @@ SET_LABEL = {
 SHORT_NAMES = {"sentence-transformers/all-MiniLM-L6-v2": "MiniLM-L6", "microsoft/deberta-v3-xsmall": "DeBERTa-v3-xsmall"}
 
 
-def system_labels(default_model: str, alt_model: str | None) -> dict[str, str]:
+def system_labels(default_model: str, alt_model: str | None, external: bool = False) -> dict[str, str]:
     """One name per system, used identically in the README, model card, UI and eval.json."""
     short = lambda m: SHORT_NAMES.get(m, m.split("/")[-1])  # noqa: E731
     labels = {
@@ -66,6 +66,9 @@ def system_labels(default_model: str, alt_model: str | None) -> dict[str, str]:
     }
     if alt_model:
         labels["classifier_alt"] = f"{short(alt_model)} classifier"
+    if external:
+        labels["protectai_default"] = "ProtectAI v2 zero-shot (threshold 0.5)"
+        labels["protectai"] = "ProtectAI v2 zero-shot (balanced-target threshold)"
     return labels
 
 
@@ -228,6 +231,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Evaluate Sentinel and baselines")
     ap.add_argument("--model-dir", default="models/sentinel")
     ap.add_argument("--train-set", default="train", help="training file used to fit the TF-IDF baseline (match the classifier's)")
+    ap.add_argument("--with-protectai", action="store_true", help="add the zero-shot ProtectAI comparison row (downloads about 0.7 GB, Apache-2.0, pinned revision)")
     ap.add_argument("--also", default=None, help="a second trained classifier directory, reported as its own row next to the main one")
     ap.add_argument("--device", default=None, help="cuda | cpu | auto for scoring (latency is always measured on the CPU as well)")
     ap.add_argument("--out", default=str(OUT), help="output directory for eval.json, stream.json, rules.json")
@@ -255,6 +259,8 @@ def main(argv: list[str] | None = None) -> None:
     clf = TransformerClassifier(model_dir, threads=a.threads, device=a.device)
     scoring_device = f"{clf.device} (float32)"
     print(f"scoring device: {scoring_device}", flush=True)
+    n_params: dict[str, int] = {}
+    n_params["classifier"] = sum(q.numel() for q in clf.model.parameters())
     val = D.load("val")
     train = D.load(a.train_set)
     tests = {n: D.load(f"test_{n}") for n in TEST_SETS}
@@ -279,8 +285,21 @@ def main(argv: list[str] | None = None) -> None:
         val_scores["alt"] = _cached(f"{key}__val", lambda: alt.score(val_t), refresh, len(val_t))
         systems["alt"] = {n: _cached(f"{key}__{n}", lambda n=n: alt.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
         alt_name = alt.name
+        n_params["classifier_alt"] = sum(q.numel() for q in alt.model.parameters())
         alt_log = json.loads((Path(a.also) / "training_log.json").read_text()) if (Path(a.also) / "training_log.json").exists() else None
         del alt
+
+    # --- optional zero-shot comparison detector (never trained or calibrated on this project's data)
+    external = None
+    if a.with_protectai:
+        from . import external as X
+
+        ext = X.ProtectAIDetector(device=a.device, threads=a.threads)
+        val_scores["protectai"] = _cached("protectai__val", lambda: ext.score(val_t), refresh, len(val_t))
+        systems["protectai"] = {n: _cached(f"protectai__{n}", lambda n=n: ext.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
+        n_params["protectai"] = sum(q.numel() for q in ext.model.parameters())
+        external = {"repo": X.REPO, "revision": X.REVISION, "license": X.LICENSE}
+        del ext
 
     # --- TF-IDF baseline
     print("fitting tfidf", flush=True)
@@ -366,6 +385,9 @@ def main(argv: list[str] | None = None) -> None:
         ra = np.array([d.action != "allow" for d in rules_dec[n]])
         put("rules_only", n, rb, None, None, ra)
         put("classifier", n, systems["classifier"][n] >= th.t_block, systems["classifier"][n], th.t_block)
+        if "protectai" in systems:
+            put("protectai_default", n, systems["protectai"][n] >= 0.5, systems["protectai"][n], 0.5)
+            put("protectai", n, systems["protectai"][n] >= sys_thr["protectai"], systems["protectai"][n], sys_thr["protectai"])
         if "alt" in systems:
             put("classifier_alt", n, systems["alt"][n] >= sys_thr["alt"], systems["alt"][n], sys_thr["alt"])
         put("tfidf", n, systems["tfidf"][n] >= sys_thr["tfidf"], systems["tfidf"][n], sys_thr["tfidf"])
@@ -435,13 +457,15 @@ def main(argv: list[str] | None = None) -> None:
         "model": clf.name,
         "scoring_device": scoring_device,
         "alt_model": alt_name,
-        "system_labels": system_labels(clf.name, alt_name),
+        "system_labels": system_labels(clf.name, alt_name, external is not None),
         "presets": {k: t.to_dict() for k, t in presets.items()},
         "default_preset": DEFAULT_PRESET,
         "preset_rule": "block threshold = lowest threshold with validation hard-benign FPR and everyday-benign FPR within the preset caps (see PRESET_CAPS); flag threshold uses looser caps",
         "val_hard_benign_n": int(hb_val.sum()),
         "distinct_hard_benign": json.loads((D.PROCESSED / "build_report.json").read_text()).get("distinct_hard_benign"),
         "alt_training_log": alt_log,
+        "external_comparison": external,
+        "n_params": n_params,
         "training_log": json.loads((model_dir / "training_log.json").read_text()) if (model_dir / "training_log.json").exists() else None,
         "sources": D.SOURCES,
         "build_report": json.loads((D.PROCESSED / "build_report.json").read_text()),
@@ -467,8 +491,8 @@ def main(argv: list[str] | None = None) -> None:
                 e["fpr_ci"] = wilson(int(blk[y == 0].sum()), e["n_neg"])
                 e["fp"] = int(blk[y == 0].sum())
             preset_results[pname]["sets"][n] = e
-    op_systems = {k: systems[k] for k in ("classifier", "alt", "tfidf") if k in systems}
-    op_names = {"classifier": "classifier", "alt": "classifier_alt", "tfidf": "tfidf"}
+    op_systems = {k: systems[k] for k in ("classifier", "alt", "tfidf", "protectai") if k in systems}
+    op_names = {"classifier": "classifier", "alt": "classifier_alt", "tfidf": "tfidf", "protectai": "protectai"}
     op = operating_table(op_systems, val_scores, val, Y, TEST_SETS)
     op["systems"] = {op_names[k]: v for k, v in op["systems"].items()}
     out = {"meta": meta, "preset_results": preset_results, "operating_table": op, "results": results, "curves": curves, "deepset_by_language": by_lang, "per_category_recall_indist": cats, "calibration": cal, "shortcuts": shortcuts, "errors": errors, "latency": latency, "slider": slider}
