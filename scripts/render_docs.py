@@ -26,6 +26,8 @@ LABEL = {
     "indirect": "Indirect injection in documents (SYNTHETIC)",
 }
 SYS = {"rules_only": "Rules only", "tfidf": "TF-IDF + LR", "classifier": "Classifier only", "sentinel": "Sentinel (rules + classifier)"}
+if "classifier_alt" in R:
+    SYS = {"rules_only": SYS["rules_only"], "tfidf": SYS["tfidf"], "classifier_alt": "Other encoder, classifier only", "classifier": SYS["classifier"], "sentinel": SYS["sentinel"]}
 
 
 def pc(x, d=1):
@@ -87,7 +89,13 @@ def latency() -> str:
     out = ["| Path | p50 (ms) | p95 (ms) |", "|---|---|---|"]
     for lab, k in rows:
         out.append(f"| {lab} | {L[k]['p50_ms']:.1f} | {L[k]['p95_ms']:.1f} |")
-    out.append(f"\nClassifier in batches of 64: {L['classifier_batch64_ms_per_prompt']:.1f} ms per prompt. {L['note']} Threads: {L['threads']}.")
+    out.append(f"\nCPU, classifier in batches of 64: {L['classifier_batch64_ms_per_prompt']:.1f} ms per prompt. {L['note']}")
+    g = L.get("gpu")
+    if g:
+        out.append(
+            f"\nGPU ({g['device']}, float32) for comparison: classifier {g['classifier_single']['p50_ms']:.1f} ms p50 / {g['classifier_single']['p95_ms']:.1f} ms p95 per prompt, "
+            f"full Sentinel {g['sentinel_full']['p50_ms']:.1f} / {g['sentinel_full']['p95_ms']:.1f} ms, batches of 64: {g['classifier_batch64_ms_per_prompt']:.1f} ms per prompt."
+        )
     return "\n".join(out)
 
 
@@ -100,17 +108,35 @@ def thresholds() -> str:
     )
 
 
-def training() -> str:
-    tl = E["meta"]["training_log"]
-    ep = tl["epochs"]
-    sizes = E["meta"]["build_report"]["sizes"]
+def _train_lines(tl: dict, title: str) -> list[str]:
+    where = f"{tl.get('gpu') or 'CPU'} ({tl.get('device', 'cpu')}, float32)"
     lines = [
-        f"- Base model: `{tl['base_model']}`; {tl['n_train']} training rows, {tl['n_val']} validation rows; "
-        f"{tl['args']['epochs']} epochs, lr {tl['args']['lr']}, batch {tl['args']['batch_size']}, max length {tl['args']['max_length']}, seed {tl['args']['seed']}.",
-        f"- CPU training time: {tl['train_seconds'] / 60:.0f} minutes with {tl['threads']} threads (torch {tl['torch']}), on a machine that was busy with other jobs.",
+        f"- **{title}: `{tl['base_model']}`** on {where}: {tl['n_train']} training rows, {tl['n_val']} validation rows; "
+        f"{tl['args']['epochs']} epochs, lr {tl['args']['lr']}, batch {tl['args']['batch_size']}, max length {tl['args']['max_length']}, seed {tl['args']['seed']}; "
+        f"{tl['train_seconds']:.0f} s of training.",
     ]
-    for e in ep:
-        lines.append(f"- Epoch {e['epoch']}: train loss {e['train_loss']:.3f}, validation PR-AUC {e['val_pr_auc']:.4f}, ROC-AUC {e['val_roc_auc']:.4f}.")
+    for e in tl["epochs"]:
+        lines.append(f"  - epoch {e['epoch']}: train loss {e['train_loss']:.3f}, validation PR-AUC {e['val_pr_auc']:.4f}, ROC-AUC {e['val_roc_auc']:.4f}")
+    return lines
+
+
+def training() -> str:
+    m = E["meta"]
+    lines = _train_lines(m["training_log"], "Shipped default")
+    if m.get("alt_training_log"):
+        lines += _train_lines(m["alt_training_log"], "Compared")
+        best = max(m["training_log"]["epochs"], key=lambda e: e["val_pr_auc"])["val_pr_auc"]
+        alt = max(m["alt_training_log"]["epochs"], key=lambda e: e["val_pr_auc"])["val_pr_auc"]
+        lines.append(f"- Selection: best validation PR-AUC {best:.4f} for the default against {alt:.4f} for the other encoder; the higher validation score is the default. Test sets played no part in the choice.")
+    bench = ROOT / "docs" / "data" / "cpu_train_bench.json"
+    if bench.exists():
+        b = json.loads(bench.read_text(encoding="utf-8"))
+        lines.append(
+            f"- CPU (estimate): `scripts/bench_cpu_train.py` timed {b['steps_timed']} real steps of the default model at {b['seconds_per_step']} s/step with {b['threads']} threads "
+            f"({b['cpu_count']} logical cores; {b['load']}), which extrapolates to about {b['estimated_minutes_for_full_run']} minutes for the {b['steps_per_run']} steps of a full run, "
+            "excluding validation passes. It is an extrapolation, and a busier machine is slower."
+        )
+    sizes = m["build_report"]["sizes"]
     lines.append("- Split sizes after de-duplication: " + ", ".join(f"{k} {v['n']} ({v['malicious']} attacks)" for k, v in sizes.items()) + ".")
     return "\n".join(lines)
 

@@ -273,6 +273,7 @@ const SYS = [
   ['classifier', 'Classifier alone (block threshold)'],
   ['rules_only', 'Rules only'],
   ['tfidf', 'TF-IDF + logistic regression'],
+  ['classifier_alt', 'Other encoder alone (1% validation-FPR threshold)'],
 ];
 const SETS = ['indist', 'deepset', 'spml', 'obfuscated', 'attacks', 'hard_benign', 'dolly_benign', 'indirect'];
 const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)', obfuscated: 'Obfuscated', attacks: 'Plain attacks', hard_benign: 'Hard benign', dolly_benign: 'Everyday benign', indirect: 'Indirect (synthetic)' };
@@ -313,7 +314,7 @@ function renderMetrics() {
     h('thead', {}, h('tr', {}, h('th', { text: 'Stage' }), h('th', { text: 'p50 ms' }), h('th', { text: 'p95 ms' }))),
     h('tbody', {}, [['Rules + normaliser', L.rules_only], ['Classifier, 1 prompt', L.classifier_single], ['Sentinel, full', L.sentinel_full], ['TF-IDF baseline', L.tfidf]].map(([n, v]) => h('tr', {}, h('td', { text: n }), h('td', { text: v.p50_ms.toFixed(1) }), h('td', { text: v.p95_ms.toFixed(1) })))),
   );
-  $('#lat-note').textContent = `${L.note} Classifier throughput in a batch of 64: ${L.classifier_batch64_ms_per_prompt.toFixed(1)} ms per prompt.`;
+  $('#lat-note').textContent = `${L.note} CPU throughput in a batch of 64: ${L.classifier_batch64_ms_per_prompt.toFixed(1)} ms per prompt.` + (L.gpu ? ` On the GPU (${L.gpu.device}): classifier ${L.gpu.classifier_single.p50_ms.toFixed(1)} ms p50 per prompt, ${L.gpu.classifier_batch64_ms_per_prompt.toFixed(1)} ms per prompt in a batch of 64.` : '');
   const errs = $('#errs');
   const fp = E.errors.false_positives.slice(0, 12), fn = E.errors.false_negatives.slice(0, 12);
   errs.replaceChildren(
@@ -331,7 +332,7 @@ function renderMetrics() {
   $('#shortcuts').textContent = `Shortcut checks: a length-only model scores ROC-AUC ${sh.length_only_roc_auc.indist.toFixed(2)} in-distribution, ${sh.length_only_roc_auc.deepset.toFixed(2)} on deepset and ${sh.length_only_roc_auc.spml.toFixed(2)} on SPML; TF-IDF trained on shuffled labels scores ${sh.label_shuffled_tfidf_roc_auc.indist.toFixed(2)} / ${sh.label_shuffled_tfidf_roc_auc.deepset.toFixed(2)} (chance is 0.50).`;
 }
 
-const SERIES = { classifier: ['Fine-tuned classifier', 'var(--lime)', ''], tfidf: ['TF-IDF + LR', 'var(--bone)', '5 4'] };
+const SERIES = { classifier: ['Fine-tuned classifier', 'var(--lime)', ''], tfidf: ['TF-IDF + LR', 'var(--bone)', '5 4'], alt: ['Other encoder', 'var(--dim)', '1.5 3'] };
 const curveState = { set: 'indist', zoom: false };
 function setupCurves() {
   const sel = $('#curve-set');
@@ -348,7 +349,7 @@ function renderCharts() {
   $('#legend').replaceChildren(...keys.map((k) => h('span', {}, h('i', { style: `background:${SERIES[k][1]};${SERIES[k][2] ? 'background:none;border-top:3px dashed ' + SERIES[k][1] : ''}` }), SERIES[k][0])));
   const a = state.eval.results;
   const n = state.eval.curves[curveState.set];
-  $('#auc').textContent = curveState.set === 'pooled' ? `Pooled over ${state.eval.meta.pooled.n} test items (${state.eval.meta.pooled.n_pos} attacks).` : Object.keys(SERIES).filter((k) => a[k]?.[curveState.set]).map((k) => `${SERIES[k][0]} ROC-AUC ${a[k][curveState.set].roc_auc.toFixed(3)}`).join(' · ');
+  $('#auc').textContent = curveState.set === 'pooled' ? `Pooled over ${state.eval.meta.pooled.n} test items (${state.eval.meta.pooled.n_pos} attacks).` : Object.keys(SERIES).filter((k) => a[k === 'alt' ? 'classifier_alt' : k]?.[curveState.set]).map((k) => `${SERIES[k][0]} ROC-AUC ${a[k === 'alt' ? 'classifier_alt' : k][curveState.set].roc_auc.toFixed(3)}`).join(' · ');
   void n;
 }
 function plot(keys, C, kind, xk, yk, xl, yl, xmax = 1, yrange = [0, 1]) {

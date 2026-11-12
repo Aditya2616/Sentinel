@@ -1,0 +1,467 @@
+[
+ {
+  "id": "OVR-001",
+  "category": "override",
+  "severity": "high",
+  "description": "Tells the model to ignore or discard its earlier instructions.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-002",
+  "category": "override",
+  "severity": "high",
+  "description": "Tells the model to drop everything it was told.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-003",
+  "category": "override",
+  "severity": "high",
+  "description": "Announces replacement instructions.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-004",
+  "category": "override",
+  "severity": "medium",
+  "description": "Tells the model not to follow its rules or guidelines.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-005",
+  "category": "override",
+  "severity": "low",
+  "description": "Persistent behaviour change phrased as a standing order.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OVR-006",
+  "category": "override",
+  "severity": "high",
+  "description": "Instruction override written in German, French or Spanish.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-001",
+  "category": "spoof",
+  "severity": "medium",
+  "description": "Starts a line with a fake system, assistant or developer role label.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-002",
+  "category": "spoof",
+  "severity": "high",
+  "description": "Contains chat-template control tokens (ChatML, Llama, Mistral style).",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-003",
+  "category": "jailbreak",
+  "severity": "high",
+  "description": "Assigns a known jailbreak persona.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-004",
+  "category": "jailbreak",
+  "severity": "high",
+  "description": "Tries to switch on a privileged or developer mode.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-005",
+  "category": "jailbreak",
+  "severity": "medium",
+  "description": "Role-play framing that removes rules or limits.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-006",
+  "category": "spoof",
+  "severity": "medium",
+  "description": "Claims authority (developer, admin, vendor) to unlock behaviour.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "SPF-007",
+  "category": "jailbreak",
+  "severity": "medium",
+  "description": "Asks the model to answer without safety rules, filters or policy.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "JBK-001",
+  "category": "jailbreak",
+  "severity": "medium",
+  "description": "Fiction or hypothetical framing combined with no-rules language.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "JBK-002",
+  "category": "jailbreak",
+  "severity": "high",
+  "description": "Token-penalty or threat framing used by DAN-style prompts.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "JBK-003",
+  "category": "jailbreak",
+  "severity": "medium",
+  "description": "Asks for a dual answer, one normal and one unfiltered.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "JBK-004",
+  "category": "jailbreak",
+  "severity": "low",
+  "description": "Forbids the model from refusing or apologising.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "JBK-005",
+  "category": "jailbreak",
+  "severity": "medium",
+  "description": "Prefix injection, forcing a compliant opening.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "LEK-001",
+  "category": "leak",
+  "severity": "high",
+  "description": "Asks for the hidden system prompt or instructions.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "LEK-002",
+  "category": "leak",
+  "severity": "medium",
+  "description": "Asks the model to repeat everything that came before the user turn.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "LEK-003",
+  "category": "leak",
+  "severity": "medium",
+  "description": "Asks for a password, key or credential held by the assistant.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "LEK-004",
+  "category": "leak",
+  "severity": "medium",
+  "description": "Asks for verbatim output of instructions or the prompt.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-001",
+  "category": "delimiter",
+  "severity": "medium",
+  "description": "Fake closing or opening tags for system or instruction blocks.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-002",
+  "category": "delimiter",
+  "severity": "medium",
+  "description": "Divider line announcing a new section of instructions.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-003",
+  "category": "delimiter",
+  "severity": "high",
+  "description": "Declares the end of the system prompt or user input to escape its context.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-004",
+  "category": "delimiter",
+  "severity": "medium",
+  "description": "Bracketed role or control marker.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-005",
+  "category": "delimiter",
+  "severity": "high",
+  "description": "HTML comment that carries instructions for the model.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "DEL-006",
+  "category": "delimiter",
+  "severity": "medium",
+  "description": "Visually hidden HTML text (a common way to hide indirect injection).",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "EXF-001",
+  "category": "exfiltration",
+  "severity": "high",
+  "description": "Markdown image whose URL carries conversation data or placeholders.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "EXF-002",
+  "category": "exfiltration",
+  "severity": "high",
+  "description": "Instruction to send conversation or secrets to an external address.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "EXF-003",
+  "category": "exfiltration",
+  "severity": "medium",
+  "description": "Asks to encode data into a URL or link.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OBF-006",
+  "category": "obfuscation",
+  "severity": "medium",
+  "description": "Asks the model to decode something and then act on it.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-001",
+  "category": "indirect",
+  "severity": "high",
+  "description": "Text in retrieved content addressed to the AI or assistant.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-002",
+  "category": "indirect",
+  "severity": "high",
+  "description": "Conditional instruction triggered by the assistant reading or summarising the content.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-003",
+  "category": "indirect",
+  "severity": "high",
+  "description": "Tells the model to hide something from the user.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-004",
+  "category": "indirect",
+  "severity": "high",
+  "description": "Instructs a tool call with a sensitive action.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-005",
+  "category": "indirect",
+  "severity": "medium",
+  "description": "Directs money or data to an address from inside retrieved content.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "IND-006",
+  "category": "indirect",
+  "severity": "medium",
+  "description": "Labelled \"important instruction\" style notice inside retrieved content.",
+  "applies_to": [
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "MUL-001",
+  "category": "override",
+  "severity": "medium",
+  "description": "German instruction to adopt a new role or drop the topic (\"vergiss alles davor\").",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OBF-001",
+  "category": "obfuscation",
+  "severity": "low/medium",
+  "description": "Invisible or bidirectional control characters.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OBF-002",
+  "category": "obfuscation",
+  "severity": "high",
+  "description": "Hidden text in Unicode tag characters.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OBF-003",
+  "category": "obfuscation",
+  "severity": "medium",
+  "description": "Look-alike letters from another script mixed into words.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ },
+ {
+  "id": "OBF-005",
+  "category": "obfuscation",
+  "severity": "medium",
+  "description": "Embedded base64 or hex text payload.",
+  "applies_to": [
+   "user",
+   "document",
+   "tool"
+  ]
+ }
+]

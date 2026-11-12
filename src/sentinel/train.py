@@ -51,13 +51,14 @@ def fit_temperature(logits: np.ndarray, y: np.ndarray) -> float:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Fine-tune the Sentinel classifier")
     ap.add_argument("--base", default="sentence-transformers/all-MiniLM-L6-v2")
-    ap.add_argument("--out", default="models/sentinel-minilm")
-    ap.add_argument("--epochs", type=int, default=2)
-    ap.add_argument("--lr", type=float, default=5e-5)
+    ap.add_argument("--out", default="models/sentinel")
+    ap.add_argument("--epochs", type=int, default=3)
+    ap.add_argument("--lr", type=float, default=8e-5)
     ap.add_argument("--batch-size", type=int, default=16)
-    ap.add_argument("--max-length", type=int, default=128)
+    ap.add_argument("--max-length", type=int, default=256)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--threads", type=int, default=3)
+    ap.add_argument("--device", default=None, help="cuda | cpu | auto (default: auto, or SENTINEL_DEVICE)")
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N training rows")
     a = ap.parse_args(argv)
 
@@ -68,6 +69,9 @@ def main(argv: list[str] | None = None) -> None:
         get_linear_schedule_with_warmup,
     )
 
+    from .classifier import pick_device
+
+    device = pick_device(a.device)
     random.seed(a.seed)
     np.random.seed(a.seed)
     torch.manual_seed(a.seed)
@@ -80,8 +84,9 @@ def main(argv: list[str] | None = None) -> None:
     if a.limit:
         random.Random(0).shuffle(train)
         train = train[: a.limit]
+    print(f"device: {device}", flush=True)
     tok = AutoTokenizer.from_pretrained(a.base)
-    model = AutoModelForSequenceClassification.from_pretrained(a.base, num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(a.base, num_labels=2, dtype=torch.float32).to(device)
 
     def enc(rows):
         return [tok(r["text"], truncation=True, max_length=a.max_length)["input_ids"] for r in rows]
@@ -94,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
     sched = get_linear_schedule_with_warmup(opt, int(0.1 * steps), steps)
 
     def pad(seqs):
-        return tok.pad({"input_ids": seqs}, return_tensors="pt")
+        return tok.pad({"input_ids": seqs}, return_tensors="pt").to(device)
 
     def predict(X):
         model.eval()
@@ -104,9 +109,17 @@ def main(argv: list[str] | None = None) -> None:
             for i in range(0, len(order), 64):
                 idx = order[i : i + 64]
                 out = model(**pad([X[k] for k in idx])).logits.float()
-                m[idx] = (out[:, 1] - out[:, 0]).numpy()
+                m[idx] = (out[:, 1] - out[:, 0]).cpu().numpy()
         model.train()
         return m
+
+    def _step(idx, total=None):
+        """Forward + backward for the rows in ``idx``; the loss is scaled when a batch is split."""
+        batch = pad([Xtr[k] for k in idx])
+        labels = torch.tensor([ytr[k] for k in idx], device=device)
+        loss = torch.nn.functional.cross_entropy(model(**batch).logits, labels)
+        (loss * (len(idx) / total) if total else loss).backward()
+        return loss.item() * (len(idx) / total) if total else loss.item()
 
     log = {"base_model": a.base, "args": vars(a), "epochs": [], "n_train": len(Xtr), "n_val": len(Xva)}
     best_state, best_ap = None, -1.0
@@ -117,15 +130,18 @@ def main(argv: list[str] | None = None) -> None:
         run = 0.0
         batches = _batches([len(x) for x in Xtr], a.batch_size, rng)
         for bi, idx in enumerate(batches):
-            batch = pad([Xtr[k] for k in idx])
-            labels = torch.tensor([ytr[k] for k in idx])
-            loss = torch.nn.functional.cross_entropy(model(**batch).logits, labels)
-            loss.backward()
+            try:
+                loss = _step(idx)
+            except torch.cuda.OutOfMemoryError:  # the GPU may be shared: retry the batch in halves
+                opt.zero_grad()
+                torch.cuda.empty_cache()
+                half = max(1, len(idx) // 2)
+                loss = sum(_step(idx[i : i + half], len(idx)) for i in range(0, len(idx), half))
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sched.step()
             opt.zero_grad()
-            run += loss.item()
+            run += loss
             step += 1
             if bi % 50 == 0:
                 print(f"epoch {ep + 1} step {bi}/{len(batches)} loss {run / (bi + 1):.4f} elapsed {time.time() - t0:.0f}s", flush=True)
@@ -146,8 +162,10 @@ def main(argv: list[str] | None = None) -> None:
     tok.save_pretrained(out)
     log["train_seconds"] = time.time() - t0
     log["threads"] = a.threads
+    log["device"] = device
+    log["gpu"] = torch.cuda.get_device_name(0) if device == "cuda" else None
     log["torch"] = torch.__version__
-    (out / "calibration.json").write_text(json.dumps({"temperature": T, "base_model": a.base, "max_length": a.max_length}, indent=2))
+    (out / "calibration.json").write_text(json.dumps({"temperature": T, "base_model": a.base, "max_length": a.max_length, "val_pr_auc": best_ap}, indent=2))
     (out / "training_log.json").write_text(json.dumps(log, indent=2))
     print(f"saved {out}  temperature={T:.3f}  train time {log['train_seconds']:.0f}s")
 

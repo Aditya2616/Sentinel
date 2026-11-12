@@ -8,7 +8,17 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_MODEL_DIR = Path(os.environ.get("SENTINEL_MODEL_DIR", "models/sentinel-minilm"))
+DEFAULT_MODEL_DIR = Path(os.environ.get("SENTINEL_MODEL_DIR", "models/sentinel"))
+
+
+def pick_device(requested: str | None = None) -> str:
+    """``cuda`` when available, else ``cpu``; override with the argument or SENTINEL_DEVICE."""
+    import torch
+
+    want = requested or os.environ.get("SENTINEL_DEVICE") or "auto"
+    if want == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return want
 
 
 def model_available(model_dir: Path | str | None = None) -> bool:
@@ -24,33 +34,37 @@ class TransformerClassifier:
     so an instruction buried late in a long document still counts.
     """
 
-    def __init__(self, model_dir: Path | str | None = None, max_length: int = 256, stride: int = 128, max_windows: int = 8, threads: int | None = None):
+    def __init__(self, model_dir: Path | str | None = None, max_length: int = 256, stride: int = 128, max_windows: int = 8, threads: int | None = None, device: str | None = None):
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         self.dir = Path(model_dir) if model_dir else DEFAULT_MODEL_DIR
+        self.device = pick_device(device)
         if threads:
             torch.set_num_threads(threads)
         self.tok = AutoTokenizer.from_pretrained(self.dir)
-        self.model = AutoModelForSequenceClassification.from_pretrained(self.dir).eval()
+        self.model = AutoModelForSequenceClassification.from_pretrained(self.dir, dtype=torch.float32).eval().to(self.device)
         cal = json.loads((self.dir / "calibration.json").read_text())
         self.temperature = float(cal.get("temperature", 1.0))
         self.name = cal.get("base_model", self.dir.name)
         self.max_length, self.stride, self.max_windows = max_length, stride, max_windows
         self._torch = torch
 
+    def _wrap(self, ids: list[int]) -> list[int]:
+        return [self.tok.cls_token_id, *ids, self.tok.sep_token_id]
+
     def _windows(self, text: str, windowed: bool) -> list[list[int]]:
         ids = self.tok(text, add_special_tokens=False, truncation=False)["input_ids"]
         body = self.max_length - 2
         if len(ids) <= body or not windowed:
-            return [self.tok.build_inputs_with_special_tokens(ids[:body])]
+            return [self._wrap(ids[:body])]
         starts = list(range(0, len(ids) - body + self.stride, self.stride))
         if starts[-1] + body < len(ids):
             starts.append(len(ids) - body)
         starts = sorted(set(min(s, len(ids) - body) for s in starts))
         if len(starts) > self.max_windows:  # keep the first windows and always the last
             starts = starts[: self.max_windows - 1] + [starts[-1]]
-        return [self.tok.build_inputs_with_special_tokens(ids[s : s + body]) for s in starts]
+        return [self._wrap(ids[s : s + body]) for s in starts]
 
     def logits(self, texts: list[str], windowed: bool = True, batch_size: int = 32) -> np.ndarray:
         """Raw logit margin (malicious minus benign) per text, max over windows."""
@@ -66,9 +80,9 @@ class TransformerClassifier:
         with torch.inference_mode():
             for b in range(0, len(order), batch_size):
                 idx = order[b : b + batch_size]
-                batch = self.tok.pad({"input_ids": [seqs[k] for k in idx]}, return_tensors="pt")
+                batch = self.tok.pad({"input_ids": [seqs[k] for k in idx]}, return_tensors="pt").to(self.device)
                 out = self.model(**batch).logits.float()
-                m = (out[:, 1] - out[:, 0]).numpy()
+                m = (out[:, 1] - out[:, 0]).cpu().numpy()
                 for k, v in zip(idx, m, strict=True):
                     margins[owner[k]] = max(margins[owner[k]], v)
         return margins

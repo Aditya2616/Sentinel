@@ -30,6 +30,7 @@ from .metrics import (
 )
 from .rules import rule_catalogue, scan
 from .screen import Sentinel
+from .sysinfo import load_note
 
 ROOT = D.ROOT
 OUT = ROOT / "docs" / "data"
@@ -109,9 +110,12 @@ def _latency(fn, items: list[str], reps: int = 1) -> dict:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Evaluate Sentinel and baselines")
-    ap.add_argument("--model-dir", default="models/sentinel-minilm")
+    ap.add_argument("--model-dir", default="models/sentinel")
+    ap.add_argument("--also", default=None, help="a second trained classifier directory, reported as its own row next to the main one")
+    ap.add_argument("--device", default=None, help="cuda | cpu | auto for scoring (latency is always measured on the CPU as well)")
     ap.add_argument("--refresh", action="store_true")
-    ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--threads", type=int, default=2)
+    ap.add_argument("--latency-threads", type=int, default=3, help="CPU threads for the dedicated CPU latency measurement")
     ap.add_argument("--latency-n", type=int, default=150)
     a = ap.parse_args(argv)
 
@@ -121,7 +125,9 @@ def main(argv: list[str] | None = None) -> None:
     from .classifier import TransformerClassifier
 
     model_dir = Path(a.model_dir)
-    clf = TransformerClassifier(model_dir, threads=a.threads)
+    clf = TransformerClassifier(model_dir, threads=a.threads, device=a.device)
+    scoring_device = f"{clf.device} (float32)"
+    print(f"scoring device: {scoring_device}", flush=True)
     val = D.load("val")
     train = D.load("train")
     tests = {n: D.load(f"test_{n}") for n in TEST_SETS}
@@ -137,6 +143,17 @@ def main(argv: list[str] | None = None) -> None:
     print("scoring classifier", flush=True)
     val_scores["classifier"] = _cached("clf__val", lambda: clf.score(val_t), refresh, len(val_t))
     systems["classifier"] = {n: _cached(f"clf__{n}", lambda n=n: clf.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
+
+    # --- optional second classifier (reported raw, threshold at 1% validation FPR like the baseline)
+    alt_name, alt_log = None, None
+    if a.also:
+        alt = TransformerClassifier(Path(a.also), threads=a.threads, device=a.device)
+        key = "clf_" + Path(a.also).name
+        val_scores["alt"] = _cached(f"{key}__val", lambda: alt.score(val_t), refresh, len(val_t))
+        systems["alt"] = {n: _cached(f"{key}__{n}", lambda n=n: alt.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
+        alt_name = alt.name
+        alt_log = json.loads((Path(a.also) / "training_log.json").read_text()) if (Path(a.also) / "training_log.json").exists() else None
+        del alt
 
     # --- TF-IDF baseline
     print("fitting tfidf", flush=True)
@@ -209,6 +226,8 @@ def main(argv: list[str] | None = None) -> None:
         ra = np.array([d.action != "allow" for d in rules_dec[n]])
         put("rules_only", n, rb, None, None, ra)
         put("classifier", n, systems["classifier"][n] >= th.t_block, systems["classifier"][n], th.t_block)
+        if "alt" in systems:
+            put("classifier_alt", n, systems["alt"][n] >= sys_thr["alt"], systems["alt"][n], sys_thr["alt"])
         put("tfidf", n, systems["tfidf"][n] >= sys_thr["tfidf"], systems["tfidf"][n], sys_thr["tfidf"])
         del sc
 
@@ -263,17 +282,35 @@ def main(argv: list[str] | None = None) -> None:
     pool = [r["text"] for n in ("dolly_benign", "hard_benign", "attacks", "indist", "deepset") for r in tests[n]]
     rs = np.random.RandomState(5)
     lat_items = [pool[i] for i in rs.choice(len(pool), min(a.latency_n, len(pool)), replace=False)]
+    # CPU numbers come from a dedicated CPU copy of the model (never the GPU one); the GPU figures are reported separately.
+    clf_cpu = TransformerClassifier(model_dir, threads=a.latency_threads, device="cpu")
+    torch.set_num_threads(a.latency_threads)
+    sent_cpu = Sentinel(clf_cpu, th)
     for t in lat_items[:5]:
-        sent.screen(t, log=False)
+        sent_cpu.screen(t, log=False)
+    load = load_note()
     latency = {
         "rules_only": _latency(lambda t: scan(t), lat_items),
-        "classifier_single": _latency(lambda t: clf.score([t]), lat_items),
-        "sentinel_full": _latency(lambda t: sent.screen(t, log=False), lat_items),
+        "classifier_single": _latency(lambda t: clf_cpu.score([t]), lat_items),
+        "sentinel_full": _latency(lambda t: sent_cpu.screen(t, log=False), lat_items),
         "tfidf": _latency(lambda t: base.score([t]), lat_items),
-        "threads": a.threads,
+        "threads": a.latency_threads,
         "cpu": platform.processor(),
-        "note": "Measured on a Windows 11 desktop CPU that was shared with other running jobs, so treat as an upper-bound ballpark.",
+        "device": "cpu",
+        "load": load,
+        "note": f"CPU figures: {a.latency_threads} torch threads, float32, {load}; the machine was shared with other jobs, so treat them as an upper-bound ballpark.",
     }
+    if clf.device != "cpu":
+        sent.screen(lat_items[0], log=False)
+        latency["gpu"] = {
+            "device": clf.device,
+            "classifier_single": _latency(lambda t: clf.score([t]), lat_items),
+            "sentinel_full": _latency(lambda t: sent.screen(t, log=False), lat_items),
+        }
+        t0 = time.perf_counter()
+        clf.score(lat_items[:64])
+        latency["gpu"]["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
+    clf = clf_cpu  # the batch figure below is the CPU one
     t0 = time.perf_counter()
     clf.score(lat_items[:64])
     latency["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
@@ -290,6 +327,9 @@ def main(argv: list[str] | None = None) -> None:
         "threshold_selection": {"policy_comparison_on_val": policy_info, "val_n": int(len(val_y)), "val_fpr_targets": {"block": 0.01, "flag": 0.03, "agree": 0.10}},
         "baseline_thresholds_at_1pct_val_fpr": sys_thr,
         "model": clf.name,
+        "scoring_device": scoring_device,
+        "alt_model": alt_name,
+        "alt_training_log": alt_log,
         "training_log": json.loads((model_dir / "training_log.json").read_text()) if (model_dir / "training_log.json").exists() else None,
         "sources": D.SOURCES,
         "build_report": json.loads((D.PROCESSED / "build_report.json").read_text()),
