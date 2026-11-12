@@ -81,6 +81,21 @@ def choose_thresholds(val_y: np.ndarray, val_s: np.ndarray, val_decide_fn) -> tu
     return best[0], info
 
 
+def _clean(o):
+    """Make the result JSON-safe: NaN/inf become null (browsers reject NaN), numpy scalars become Python numbers."""
+    import math
+
+    if isinstance(o, dict):
+        return {k: _clean(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_clean(v) for v in o]
+    if isinstance(o, np.generic):
+        o = o.item()
+    if isinstance(o, float) and not math.isfinite(o):
+        return None
+    return o
+
+
 def _latency(fn, items: list[str], reps: int = 1) -> dict:
     ts = []
     for t in items:
@@ -283,8 +298,8 @@ def main(argv: list[str] | None = None) -> None:
     }
     out = {"meta": meta, "results": results, "curves": curves, "deepset_by_language": by_lang, "per_category_recall_indist": cats, "calibration": cal, "shortcuts": shortcuts, "errors": errors, "latency": latency, "slider": slider}
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "eval.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":"), default=float), encoding="utf-8")
-    (OUT / "stream.json").write_text(json.dumps(stream, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (OUT / "eval.json").write_text(json.dumps(_clean(out), ensure_ascii=False, separators=(",", ":"), default=float), encoding="utf-8")
+    (OUT / "stream.json").write_text(json.dumps(_clean(stream), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (OUT / "rules.json").write_text(json.dumps(rule_catalogue(), indent=1), encoding="utf-8")
     print_summary(results)
 

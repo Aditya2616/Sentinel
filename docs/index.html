@@ -69,6 +69,7 @@
           <label class="label" for="inp" style="display:block;margin-top:14px">Text</label>
           <textarea id="inp" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Pick an example below."></textarea>
           <div class="row"><button id="screenbtn" class="btn" type="button">Screen &amp; log</button></div>
+          <div class="quick" id="quick" aria-live="polite"></div>
           <div class="row" id="chips" style="margin-top:12px" aria-label="Examples"></div>
           <div class="minilane"><canvas id="minilane" aria-label="Your prompt travelling to the shield"></canvas></div>
         </div>
@@ -84,7 +85,7 @@
         <div class="cards" id="cards"></div>
         <div class="label" style="margin:22px 0 8px">Every system, every test set (recall R on attacks, false-positive rate FPR on benign)</div>
         <div class="tablewrap"><table id="sys-table"></table></div>
-        <p class="honest">In-distribution scores are the least informative here: the training data is partly templated, so that column looks better than real traffic will. Rely on the OOD and hard-benign columns. The indirect-injection set is <b>synthetic</b> and small. ProtectAI v2 is used exactly as published, never trained or tuned on this data (only its decision threshold is shown at both its default and a 1%-FPR point chosen on my validation split).</p>
+        <p class="honest">In-distribution scores are the least informative here: the training data is partly templated, so that column looks better than real traffic will. Rely on the OOD and hard-benign columns. The indirect-injection set is <b>synthetic</b> and small.</p>
         <div class="panel" style="margin-top:18px">
           <div class="sel" id="curve-set" role="group" aria-label="Dataset for the curves"></div>
           <div class="row" style="margin-bottom:10px"><button class="chip" id="zoom" type="button" aria-pressed="false">Zoom ROC to FPR ≤ 0.1</button><span class="label" id="auc"></span></div>

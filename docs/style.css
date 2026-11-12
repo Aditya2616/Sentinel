@@ -204,7 +204,9 @@ ul.lim li { margin: 8px 0; }
 footer { margin-top: clamp(56px, 9vw, 110px); border-top: 1px solid var(--line); padding: 28px 0 44px; color: var(--mute); font-size: 14px; }
 footer .wrap { display: flex; gap: 12px 28px; flex-wrap: wrap; align-items: center; }
 footer a { color: var(--bone); text-underline-offset: 3px; }
-.toast { position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 20px); opacity: 0; transition: 0.35s var(--ease); background: var(--bone); color: var(--void); font: 500 12px var(--mono); padding: 12px 16px; border-radius: 12px; z-index: 40; pointer-events: none; max-width: calc(100vw - 32px); }
+.toast { position: fixed; left: 50%; top: 66px; transform: translate(-50%, -20px); opacity: 0; transition: 0.35s var(--ease); background: var(--bone); color: var(--void); font: 500 12px var(--mono); padding: 12px 16px; border-radius: 12px; z-index: 40; pointer-events: none; max-width: calc(100vw - 32px); }
+.quick { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; min-height: 0; }
+.quick .qtxt { font-size: 14px; line-height: 1.4; color: var(--dim); }
 .toast.on { transform: translate(-50%, 0); opacity: 1; }
 :focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
