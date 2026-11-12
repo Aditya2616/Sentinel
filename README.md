@@ -173,7 +173,7 @@ My first model caught only 35 to 40% of attacks from datasets it had never seen,
 
 - **deepset/prompt-injections stays untouched** (test only). SPML is split once by a fixed seed into an **OOD-dev half**, used only to choose between variants, and an **OOD-test half**, which is what the tables report. This halves the SPML test set, so its intervals are wider than before.
 - Variants are compared on validation and OOD-dev only. A variant may not raise the false-positive rate on the validation hard-benign examples.
-- What I tried: (a) augmentation from my own normaliser in reverse (re-cased, re-punctuated, leetspeak, zero-width, homoglyph, spaced, base64 variants of attack prompts), attacks embedded in longer benign context, and benign text that quotes attacks as hard negatives (`src/sentinel/augment.py`, templated, training data only); extra public training data (PromptShield, Apache-2.0, a length-filtered sample; Lakera Gandalf injections, MIT, attacks only); (b) the training window matches inference (256 tokens; the extra data is filtered to fit it); (c) longer training with early stopping on OOD-dev; (d) reporting flag-or-block recall and recall at fixed false-positive rates, so readers see the operating curve and not one point.
+- What I tried: (a) augmentation from my own normaliser in reverse (re-cased, re-punctuated, leetspeak, zero-width, homoglyph, spaced, base64 variants of attack prompts), attacks embedded in longer benign context, and benign text that quotes attacks as hard negatives (`src/sentinel/augment.py`, templated, training data only); extra public training data (PromptShield, Apache-2.0, a length-filtered sample; Lakera Gandalf injections, MIT, all three splits used as attack-only training data); (b) the training window matches inference (256 tokens; the extra data is filtered to fit it); (c) longer training with early stopping on OOD-dev; (d) reporting flag-or-block recall and recall at fixed false-positive rates, so readers see the operating curve and not one point.
 
 Selection among variants (validation and OOD-dev only; OOD-dev has 300 attacks, so differences of a few points are noise):
 
@@ -347,7 +347,7 @@ Code: MIT, Aditya Jain. Data is downloaded at run time from pinned revisions and
 - [SPML Chatbot Prompt Injection](https://huggingface.co/datasets/reshabhs/SPML_Chatbot_Prompt_Injection) (MIT), out-of-distribution test
 - [databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k) (CC-BY-SA-3.0), benign validation and test only
 - [hendzh/PromptShield](https://huggingface.co/datasets/hendzh/PromptShield) (Apache-2.0), extra training data (a length-filtered sample of its train split; its test split is not used)
-- [Lakera/gandalf_ignore_instructions](https://huggingface.co/datasets/Lakera/gandalf_ignore_instructions) (MIT), extra training data (attacks only)
+- [Lakera/gandalf_ignore_instructions](https://huggingface.co/datasets/Lakera/gandalf_ignore_instructions) (MIT), extra training data (attacks only; all three splits)
 - Base models [microsoft/deberta-v3-xsmall](https://huggingface.co/microsoft/deberta-v3-xsmall) (MIT, default) and [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) (Apache-2.0, compared)
 - My hand-written sets in `data/hand_written/` (MIT)
 

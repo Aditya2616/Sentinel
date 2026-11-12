@@ -28,7 +28,7 @@ SOURCES: dict[str, dict] = {
     "deepset/prompt-injections": {"rev": "4f61ecb038e9c3fb77e21034b22511b523772cdd", "license": "apache-2.0", "patterns": ["data/*", "README.md"]},
     "reshabhs/SPML_Chatbot_Prompt_Injection": {"rev": "02ce8084e979bc7d4c24ee35d22ecb7f2db96ff5", "license": "mit", "patterns": ["*.csv", "README.md"]},
     "hendzh/PromptShield": {"rev": "a5234cb1f5cdb256600cab64b8c961195b5e8404", "license": "apache-2.0", "patterns": ["train.json", "README.md"]},
-    "Lakera/gandalf_ignore_instructions": {"rev": "04737b65e90a6794ec227012e4a255a7def6344b", "license": "mit", "patterns": ["data/train-*", "data/validation-*", "README.md"]},
+    "Lakera/gandalf_ignore_instructions": {"rev": "04737b65e90a6794ec227012e4a255a7def6344b", "license": "mit", "patterns": ["data/*", "README.md"]},
     "databricks/databricks-dolly-15k": {"rev": "bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a", "license": "cc-by-sa-3.0", "patterns": ["*.jsonl", "README.md"]},
 }
 

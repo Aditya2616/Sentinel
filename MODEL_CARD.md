@@ -25,7 +25,7 @@ Downloaded by script at pinned revisions (`sentinel data`), never redistributed:
 | deepset/prompt-injections | Apache-2.0 | out-of-distribution test only, never used for any choice |
 | SPML Chatbot Prompt Injection | MIT | split once by a fixed seed: one half is OOD-dev (model selection only), the other half OOD-test (reported) |
 | hendzh/PromptShield | Apache-2.0 (dataset card) | extra training data: a length-filtered sample (up to 2000 per class, at most 800 characters) of its train split |
-| Lakera/gandalf_ignore_instructions | MIT (dataset card) | extra training data: attacks only |
+| Lakera/gandalf_ignore_instructions | MIT (dataset card) | extra training data: attacks only, all three splits |
 | Augmentation (`src/sentinel/augment.py`) | MIT (mine) | derived from the training rows only: obfuscated variants, attacks embedded in benign context, benign text quoting attacks |
 | databricks-dolly-15k | CC-BY-SA-3.0 | benign validation and test only; not used for training |
 
