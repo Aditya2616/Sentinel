@@ -67,7 +67,7 @@ def _read_jsonl(p: Path) -> list[dict]:
 
 def _rows(df: pd.DataFrame, text: str, label: str | None, source: str, category: str | None = None, fixed_label: int | None = None) -> list[dict]:
     out = []
-    for i, r in df.iterrows():
+    for _, r in df.iterrows():
         out.append(
             {
                 "text": str(r[text]),

@@ -52,17 +52,21 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Fine-tune the Sentinel classifier")
     ap.add_argument("--base", default="microsoft/deberta-v3-xsmall")
     ap.add_argument("--out", default="models/sentinel-deberta-xsmall")
-    ap.add_argument("--epochs", type=int, default=3)
+    ap.add_argument("--epochs", type=int, default=2)
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--batch-size", type=int, default=16)
-    ap.add_argument("--max-length", type=int, default=256)
+    ap.add_argument("--max-length", type=int, default=128)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--threads", type=int, default=3)
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N training rows")
     a = ap.parse_args(argv)
 
     import torch
-    from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup
+    from transformers import (
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+        get_linear_schedule_with_warmup,
+    )
 
     random.seed(a.seed)
     np.random.seed(a.seed)

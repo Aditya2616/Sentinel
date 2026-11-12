@@ -22,7 +22,8 @@ from ..audit import AuditLog
 from ..rules import rule_catalogue
 from ..screen import Decision, Sentinel
 
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+# The UI lives in docs/ so the same files serve GitHub Pages (recorded run) and the local service (live mode).
+WEB_DIR = Path(os.environ.get("SENTINEL_WEB_DIR", Path(__file__).resolve().parents[3] / "docs"))
 ACTION_RANK = {"allow": 0, "flag": 1, "block": 2}
 RULES_ONLY_NOTICE = "Running in rules-only mode: no trained classifier was found, so only the pattern rules are active. Run `sentinel train` to enable the classifier."
 

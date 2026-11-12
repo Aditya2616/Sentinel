@@ -37,7 +37,7 @@ sentinel = "sentinel.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-sentinel = ["rules_data/*.yaml", "web/*", "web/**/*"]
+sentinel = ["rules_data/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

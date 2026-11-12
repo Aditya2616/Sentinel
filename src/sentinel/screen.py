@@ -109,3 +109,25 @@ class Sentinel:
             )
             d.audit_id = entry["id"]
         return d
+
+    def screen_batch(self, texts: list[str], source: str = "user") -> list[Decision]:
+        """Screen many texts with one batched classifier call (used by evaluation). Not audited."""
+        norms = [normalize(x[:MAX_CHARS]) for x in texts]
+        results = [scan(x[:MAX_CHARS], source, norm=n) for x, n in zip(texts, norms, strict=True)]
+        scores: list[float | None] = [None] * len(texts)
+        if self.classifier is not None:
+            flat, owner = [], []
+            for i, n in enumerate(norms):
+                for ct in classifier_texts(n):
+                    flat.append(ct)
+                    owner.append(i)
+            raw = self.classifier.score(flat)
+            best = [0.0] * len(texts)
+            for o, s in zip(owner, raw, strict=True):
+                best[o] = max(best[o], float(s))
+            scores = best
+        out = []
+        for n, r, s in zip(norms, results, scores, strict=True):
+            action, reason = decide(r.hits, s, self.thresholds, source)
+            out.append(Decision(action=action, score=s, reason=reason, hits=r.hits, notes=n.notes, mode=self.mode, source=source, thresholds=self.thresholds.to_dict()))
+        return out

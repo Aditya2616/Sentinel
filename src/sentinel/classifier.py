@@ -44,7 +44,7 @@ class TransformerClassifier:
         body = self.max_length - 2
         if len(ids) <= body or not windowed:
             return [self.tok.build_inputs_with_special_tokens(ids[:body])]
-        starts = list(range(0, len(ids) - body + stride, self.stride))
+        starts = list(range(0, len(ids) - body + self.stride, self.stride))
         if starts[-1] + body < len(ids):
             starts.append(len(ids) - body)
         starts = sorted(set(min(s, len(ids) - body) for s in starts))

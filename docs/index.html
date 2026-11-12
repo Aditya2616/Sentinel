@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sentinel · prompt-injection guard</title>
+<meta name="description" content="A safety layer that screens prompts and retrieved content for injection before they reach the model. Rules, a fine-tuned classifier and an audit trail.">
+<meta name="theme-color" content="#07080a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2307080a'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23d7ff3f'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Instrument+Serif:ital@1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top"><i></i>Sentinel</a>
+    <span id="mode" class="mode">Loading…</span>
+    <nav class="links" aria-label="Sections">
+      <a href="#inspect">Inspect</a><a href="#metrics">Metrics</a><a href="#auditlog">Audit</a><a href="#how">How</a>
+    </nav>
+    <button id="themebtn" class="iconbtn" type="button" aria-label="Toggle light or dark theme">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap">
+      <div class="label">AI safety · prompt-injection guard</div>
+      <h1>A shield in front of <em>the model.</em></h1>
+      <p class="lede">Every prompt, document and tool output is normalised, matched against known injection patterns and scored by a small fine-tuned classifier before it reaches the model. Attacks bounce in orange. Clean requests pass in lime.</p>
+      <p class="lede" id="recnote" style="font-size:14px">This page is a <b>recorded run</b>: a fixed sample of held-out evaluation prompts and the decisions this repository made on them, wrong calls included. Tap a packet to inspect it.</p>
+      <p class="lede" id="livenote" style="font-size:14px" hidden>Live mode: the stream below replays a recorded evaluation sample; the inspector scores your own text with the local service.</p>
+      <div class="stagebox">
+        <div class="stage-hud">
+          <span class="pill a">allowed <b id="c-allow">0</b></span>
+          <span class="pill f">flagged <b id="c-flag">0</b></span>
+          <span class="pill b">blocked <b id="c-block">0</b></span>
+          <span class="pill rec">wrong calls <b id="c-err" style="color:var(--ember)">0</b></span>
+          <span class="spacer"></span>
+          <button class="ctl" id="play" type="button" aria-pressed="false">Pause</button>
+          <button class="ctl" type="button" data-speed="1" aria-pressed="true">1x</button>
+          <button class="ctl" type="button" data-speed="3" aria-pressed="false">3x</button>
+        </div>
+        <canvas id="stage" aria-label="Animated stream of prompts hitting a shield. Blocked prompts bounce back in orange, allowed prompts pass in lime."></canvas>
+        <button class="ticker" id="ticker" type="button" aria-label="Open the latest decision in the inspector">
+          <span class="tag allow">waiting</span><span class="txt">The first packet is on its way…</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="s" id="inspect">
+    <div class="wrap">
+      <div class="sh"><h2>Inspect <em>one decision</em></h2><p id="inspector-mode"></p></div>
+      <p class="notice" id="modenotice" hidden>Rules-only mode: no trained classifier was found, so only the pattern rules are active. Run <span class="mono">sentinel train</span> to enable the classifier.</p>
+      <div class="grid2">
+        <div class="panel">
+          <div class="row" style="justify-content:space-between">
+            <div class="seg" id="srcseg" role="group" aria-label="What is being screened">
+              <button type="button" data-src="user" aria-pressed="true">Prompt</button>
+              <button type="button" data-src="document" aria-pressed="false">Document</button>
+              <button type="button" data-src="tool" aria-pressed="false">Tool output</button>
+            </div>
+          </div>
+          <label class="label" for="inp" style="display:block;margin-top:14px">Text</label>
+          <textarea id="inp" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="Pick an example below."></textarea>
+          <div class="row"><button id="screenbtn" class="btn" type="button">Screen &amp; log</button></div>
+          <div class="row" id="chips" style="margin-top:12px" aria-label="Examples"></div>
+          <div class="minilane"><canvas id="minilane" aria-label="Your prompt travelling to the shield"></canvas></div>
+        </div>
+        <div class="panel" id="result" aria-live="polite"><p class="empty">Pick an example to see the decision.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="s" id="metrics">
+    <div class="wrap">
+      <div class="sh"><h2>What it <em>actually</em> gets right</h2><p>All numbers come from <span class="mono">sentinel eval</span> on held-out data: thresholds were fixed on a validation split first. Small sets have wide intervals, so each rate carries its 95% interval. The first two cards are the ones that matter: benign text that talks about injection, and attacks from datasets the model never saw.</p></div>
+      <div id="metrics-body">
+        <div class="cards" id="cards"></div>
+        <div class="label" style="margin:22px 0 8px">Every system, every test set (recall R on attacks, false-positive rate FPR on benign)</div>
+        <div class="tablewrap"><table id="sys-table"></table></div>
+        <p class="honest">In-distribution scores are the least informative here: the training data is partly templated, so that column looks better than real traffic will. Rely on the OOD and hard-benign columns. The indirect-injection set is <b>synthetic</b> and small. ProtectAI v2 is used exactly as published, never trained or tuned on this data (only its decision threshold is shown at both its default and a 1%-FPR point chosen on my validation split).</p>
+        <div class="panel" style="margin-top:18px">
+          <div class="sel" id="curve-set" role="group" aria-label="Dataset for the curves"></div>
+          <div class="row" style="margin-bottom:10px"><button class="chip" id="zoom" type="button" aria-pressed="false">Zoom ROC to FPR ≤ 0.1</button><span class="label" id="auc"></span></div>
+          <div class="charts"><div class="chart"><h3>ROC</h3><div id="roc"></div></div><div class="chart"><h3>Precision / recall</h3><div id="pr"></div></div></div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="charts">
+          <div class="panel">
+            <h3>Confusion matrix · classifier alone, move the threshold</h3>
+            <div class="sel" id="cm-set" role="group" aria-label="Dataset for the confusion matrix"></div>
+            <div class="cm" id="cm"></div>
+            <input id="thr" type="range" min="0" max="1000" step="1" aria-label="Classifier threshold">
+            <div class="kv" id="thr-read"></div>
+            <p class="label" style="margin-top:10px;text-transform:none;letter-spacing:0">Classifier only. The deployed decision layer also uses rules, so its numbers are in the table above.</p>
+          </div>
+          <div class="panel chart"><h3>Calibration</h3><div id="cal"></div></div>
+        </div>
+        <div class="charts">
+          <div class="panel"><h3>Recall by attack category (in-distribution)</h3><div class="bars" id="cats"></div></div>
+          <div class="panel"><h3>Latency on this CPU</h3><div class="tablewrap"><table id="lat"></table></div><p class="label" id="lat-note" style="margin-top:10px;text-transform:none;letter-spacing:0"></p></div>
+        </div>
+        <details class="fold"><summary>Where it goes wrong: real misses and false alarms</summary><div class="errlist" id="errs" style="padding-bottom:14px"></div></details>
+        <details class="fold"><summary>Data provenance, licences and shortcut checks</summary>
+          <div class="tablewrap" style="margin-bottom:10px"><table id="prov"></table></div>
+          <p class="label" id="shortcuts" style="text-transform:none;letter-spacing:0;padding-bottom:14px"></p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="s audit" id="auditlog">
+    <div class="wrap">
+      <div class="sh"><h2>The <em>audit</em> trail</h2><p id="auditnote"></p></div>
+      <div class="sel" id="auditfilter" role="group" aria-label="Filter decisions">
+        <button type="button" data-f="all" aria-pressed="true">All</button><button type="button" data-f="allow" aria-pressed="false">Allow</button><button type="button" data-f="flag" aria-pressed="false">Flag</button><button type="button" data-f="block" aria-pressed="false">Block</button>
+      </div>
+      <div class="panel" id="audit" style="padding:6px 14px"></div>
+    </div>
+  </section>
+
+  <section class="s" id="how">
+    <div class="wrap">
+      <div class="sh"><h2>How it <em>works</em>, and where it stops</h2></div>
+      <div class="flow" id="flow"></div>
+      <ul class="lim">
+        <li>This is one layer. OWASP is explicit that no filter fully prevents prompt injection; least-privilege tools and output checks still matter.</li>
+        <li>A determined attacker who adapts to this classifier can get past it. The decision layer is easy to evade by wording, and I have not run an adaptive attack against it.</li>
+        <li>Training data is English. Recall on German examples is much lower, shown in the metrics above.</li>
+        <li>The model is small by design (fast on a CPU) and is trained on public datasets that are partly synthetic.</li>
+        <li>Attack strings on this page are the standard public-dataset style, shown for defence. None is a working exploit against a specific product.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Built by <a href="https://adityajain16.vercel.app">Aditya Jain</a></span>
+    <a href="https://github.com/Aditya2616/Sentinel">github.com/Aditya2616/Sentinel</a>
+    <span>MIT licence</span>
+  </div>
+</footer>
+<div class="toast" id="toast" role="status"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
