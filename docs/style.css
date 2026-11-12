@@ -147,7 +147,7 @@ textarea#inp[readonly] { color: var(--mute); }
 .card .n { font: 400 12px/1.4 var(--sans); color: var(--mute); margin-top: 6px; }
 .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 14px; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 9px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
 th { font: 500 10px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
 th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--panel); }
 tr.hl-row td { color: var(--lime); }
@@ -210,3 +210,4 @@ footer a { color: var(--bone); text-underline-offset: 3px; }
 .toast.on { transform: translate(-50%, 0); opacity: 1; }
 :focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+@media (max-width: 420px) { .mode { font-size: 10px; letter-spacing: 0; padding: 6px 8px; } header.top .wrap { gap: 8px; } }

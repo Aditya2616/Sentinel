@@ -180,3 +180,20 @@ def test_history_is_logged_once(sentinel, audit, n):
     for _ in range(n):
         c.post("/v1/chat/completions", json=chat("same question again"))
     assert len(audit.read(100)) == 1
+
+
+def test_index_marks_live_service(tmp_path, monkeypatch):
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "index.html").write_text("<!doctype html><html><head><title>x</title></head><body>hi</body></html>", encoding="utf-8")
+    import sentinel.server.app as appmod
+
+    monkeypatch.setattr(appmod, "WEB_DIR", web)
+    from fastapi.testclient import TestClient
+
+    from sentinel.audit import AuditLog
+    from sentinel.screen import Sentinel
+
+    client = TestClient(appmod.create_app(Sentinel(None), AuditLog(tmp_path / "a.jsonl")))
+    html = client.get("/").text
+    assert 'name="sentinel-live"' in html and "hi" in html

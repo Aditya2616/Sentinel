@@ -13,7 +13,7 @@ from typing import Any, Literal
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -272,6 +272,14 @@ def create_app(
                 return JSONResponse({"error": {"message": "upstream request failed"}}, status_code=502)
 
     if serve_ui and WEB_DIR.exists():
+
+        @app.get("/", include_in_schema=False)
+        def index() -> Response:
+            # The page is identical to the static copy except for this marker, which tells it a live service is behind it
+            # (so the static build never probes /health and logs a 404).
+            html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+            return Response(html.replace("<head>", '<head><meta name="sentinel-live" content="1">', 1), media_type="text/html")
+
         app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app
 

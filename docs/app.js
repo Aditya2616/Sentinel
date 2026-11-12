@@ -60,7 +60,7 @@ function toast(msg) {
 let hero, mini;
 async function boot() {
   const [health, evalj, stream, rules] = await Promise.all([
-    getJSON('/health', 1500).catch(() => null),
+    document.querySelector('meta[name="sentinel-live"]') ? getJSON('/health', 1500).catch(() => null) : Promise.resolve(null),
     getJSON('data/eval.json').catch(() => null),
     getJSON('data/stream.json').catch(() => null),
     getJSON('data/rules.json').catch(() => []),
@@ -273,13 +273,16 @@ const SYS = [
   ['classifier', 'Classifier alone (block threshold)'],
   ['rules_only', 'Rules only'],
   ['tfidf', 'TF-IDF + logistic regression'],
-  ['classifier_alt', 'Other encoder alone (1% validation-FPR threshold)'],
+  ['classifier_alt', 'Other encoder alone'],
 ];
 const SETS = ['indist', 'deepset', 'spml', 'obfuscated', 'attacks', 'hard_benign', 'dolly_benign', 'indirect'];
 const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)', obfuscated: 'Obfuscated', attacks: 'Plain attacks', hard_benign: 'Hard benign', dolly_benign: 'Everyday benign', indirect: 'Indirect (synthetic)' };
 function ci(a) { return a ? `${(a[0] * 100).toFixed(1)}–${(a[1] * 100).toFixed(1)}` : ''; }
 function renderMetrics() {
   const E = state.eval, R = E.results, S = R.sentinel;
+  const short = (m) => (m || '').split('/').pop();
+  if (E.meta.model) SERIES.classifier[0] = short(E.meta.model) + ' (default)';
+  if (E.meta.alt_model) { SERIES.alt[0] = short(E.meta.alt_model); SYS.find((x) => x[0] === 'classifier_alt')[1] = short(E.meta.alt_model) + ' alone'; }
   const cards = $('#cards');
   const hb = S.hard_benign, ds = S.deepset, sp = S.spml, lat = E.latency.sentinel_full;
   const mk = (label, v, c, n) => h('div', { class: 'card' }, h('div', { class: 'label', text: label }), h('div', { class: 'v', text: v }), h('div', { class: 'ci', text: c }), h('div', { class: 'n', text: n }));

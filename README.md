@@ -200,11 +200,11 @@ GPU (cuda, float32) for comparison: classifier 6.6 ms p50 / 9.4 ms p95 per promp
 ### Training
 
 <!-- BEGIN:training -->
-**Shipped default: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 5864 training rows, 1605 validation rows; 3 epochs, lr 8e-05, batch 16, max length 256, seed 42; 92 s of training.
+- **Shipped default: `sentence-transformers/all-MiniLM-L6-v2`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 5864 training rows, 1605 validation rows; 3 epochs, lr 8e-05, batch 16, max length 256, seed 42; 92 s of training.
   - epoch 1: train loss 0.210, validation PR-AUC 0.9940, ROC-AUC 0.9960
   - epoch 2: train loss 0.058, validation PR-AUC 0.9971, ROC-AUC 0.9978
   - epoch 3: train loss 0.017, validation PR-AUC 0.9972, ROC-AUC 0.9977
-**Compared: `microsoft/deberta-v3-xsmall`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 5864 training rows, 1605 validation rows; 3 epochs, lr 5e-05, batch 16, max length 256, seed 42; 401 s of training.
+- **Compared: `microsoft/deberta-v3-xsmall`** on NVIDIA GeForce RTX 5060 Ti (cuda, float32): 5864 training rows, 1605 validation rows; 3 epochs, lr 5e-05, batch 16, max length 256, seed 42; 401 s of training.
   - epoch 1: train loss 0.249, validation PR-AUC 0.9926, ROC-AUC 0.9948
   - epoch 2: train loss 0.074, validation PR-AUC 0.9961, ROC-AUC 0.9973
   - epoch 3: train loss 0.039, validation PR-AUC 0.9959, ROC-AUC 0.9970
