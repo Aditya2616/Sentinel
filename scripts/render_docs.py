@@ -53,7 +53,7 @@ def headline() -> str:
         c = e["confusion"]
         counts = cnt.format(**c, n_pos=e["n_pos"], n_neg=e["n_neg"])
         iv = e.get(kc)
-        out.append(f"| {name} | {pc(e[k])} | {('%.1f%% to %.1f%%' % (iv[0] * 100, iv[1] * 100)) if iv else 'n/a'} | {counts} |")
+        out.append(f"| {name} | {pc(e[k])} | {f'{iv[0] * 100:.1f}% to {iv[1] * 100:.1f}%' if iv else 'n/a'} | {counts} |")
     i = s["indist"]
     out.append(f"| In-distribution F1 (secondary; the training data is partly synthetic) | {num(i['f1'])} | | n={i['n']} |")
     return "\n".join(out)
