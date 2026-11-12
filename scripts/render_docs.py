@@ -136,7 +136,8 @@ def fill(path: Path) -> None:
     s = path.read_text(encoding="utf-8")
     for name, fn in BLOCKS.items():
         pat = re.compile(rf"(<!-- BEGIN:{name} -->)(.*?)(<!-- END:{name} -->)", re.S)
-        s = pat.sub(lambda m: f"{m.group(1)}\n{fn()}\n{m.group(3)}", s)
+        body = fn()
+        s = pat.sub(lambda m, body=body: f"{m.group(1)}\n{body}\n{m.group(3)}", s)
     path.write_text(s, encoding="utf-8", newline="\n")
     print("updated", path.name)
 
