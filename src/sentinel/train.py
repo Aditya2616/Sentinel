@@ -50,8 +50,8 @@ def fit_temperature(logits: np.ndarray, y: np.ndarray) -> float:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Fine-tune the Sentinel classifier")
-    ap.add_argument("--base", default="microsoft/deberta-v3-xsmall")
-    ap.add_argument("--out", default="models/sentinel-deberta-xsmall")
+    ap.add_argument("--base", default="sentence-transformers/all-MiniLM-L6-v2")
+    ap.add_argument("--out", default="models/sentinel-minilm")
     ap.add_argument("--epochs", type=int, default=2)
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--batch-size", type=int, default=16)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_MODEL_DIR = Path(os.environ.get("SENTINEL_MODEL_DIR", "models/sentinel-deberta-xsmall"))
+DEFAULT_MODEL_DIR = Path(os.environ.get("SENTINEL_MODEL_DIR", "models/sentinel-minilm"))
 
 
 def model_available(model_dir: Path | str | None = None) -> bool:

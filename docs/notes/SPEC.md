@@ -8,7 +8,7 @@ A guard that screens prompts and retrieved content for injection and jailbreak a
 flowchart LR
   P[Prompt / document / tool output] --> N[Normaliser]
   N --> R[Rules engine]
-  N --> C[Classifier: DeBERTa-v3-xsmall]
+  N --> C[Classifier: fine-tuned MiniLM-L6]
   R --> D[Decision layer]
   C --> D
   D -->|allow| U[Upstream model]
@@ -21,7 +21,7 @@ flowchart LR
 
 - `normalize.py`: NFKC, zero-width/bidi stripping, homoglyph folding (confusables table), leetspeak and spaced-letter folding, base64/hex/ROT13 candidate decoding. Returns normalised text plus an offset map and a list of transformations applied (so spans can be highlighted on the original text and "obfuscation used" is itself a signal).
 - `rules.py` + `rules_data/*.yaml`: rule = id, category, severity (low/med/high), regex or token predicate, description, examples, applies_to (`user` / `document` / both). ~40 rules across the families in RESEARCH.md. Each rule has positive and negative test strings; tests iterate every rule.
-- `classifier.py`: loads the fine-tuned model (path from env or `models/`), batch inference, returns P(injection); `baseline.py` TF-IDF + LR; `external.py` optional ProtectAI wrapper for comparison only.
+- `classifier.py`: loads the fine-tuned model (path from env or `models/`), batch inference, returns P(injection); `baseline.py` TF-IDF + LR.
 - `decision.py`: combines rule hits and score into `allow | flag | block` plus a human-readable reason. Policy: block if score >= T_block, or high-severity rule and score >= T_agree; flag if score >= T_flag or any rule; otherwise allow. Thresholds are chosen on the validation set (T_block at a target FPR on hard-benign + realistic benign, e.g. 1%; T_flag for recall) and stored in `thresholds.json`, never tuned on test. Probability calibration (Platt/temperature) fitted on validation, reliability curve reported.
 - `screen.py`: `Sentinel.screen(text, source="user"|"document"|"tool")`, returns a typed `Decision` (action, score, rules hit with spans on original text, normalisation notes, reason, latency). Documents/tool outputs use a stricter policy (any imperative-to-assistant pattern flags).
 - `audit.py`: append-only JSONL, one record per decision (timestamp, id, action, score, rule ids, source, text hash and truncated text; full text off by default for privacy), reader with filters.
@@ -36,7 +36,7 @@ Weights are not committed: `sentinel fetch-model` downloads if I host a release 
 
 - Train: neuralchemy `core` train + jackhhao + hand-written train half (hard benign, obfuscated). Validation: neuralchemy validation + hand-written val. Dedup on normalised text across all splits first; report counts.
 - Test sets (never touched during training or threshold choice): (1) in-distribution neuralchemy test; (2) **OOD**: deepset/prompt-injections (all 662, EN/DE reported separately); (3) SPML user prompts (subsample); (4) hand-written **hard-benign test** (talks about injection) and **obfuscated attack test**; (5) realistic benign: dolly-15k sample (FPR only); (6) indirect set (documents/tool outputs, synthetic, small).
-- Systems compared on identical sets: rules only, TF-IDF+LR, fine-tuned DeBERTa-v3-xsmall, ProtectAI v2 zero-shot, full Sentinel (rules + classifier + decision).
+- Systems compared on identical sets: rules only, TF-IDF+LR, fine-tuned MiniLM-L6, full Sentinel (ProtectAI v2 zero-shot was planned and not run) (rules + classifier + decision).
 - Metrics: precision, recall, F1, ROC-AUC, PR-AUC, ROC and PR curves, confusion matrix at the chosen thresholds, FPR on hard-benign and realistic benign with Wilson intervals (sets are small; I will show the intervals), calibration curve, per-category recall, p50/p95 latency per prompt on this CPU (single and batch, rules vs classifier vs total). Shortcut checks: length-only baseline, label-shuffle sanity check.
 - Negative results stay in the README (e.g. German OOD recall, obfuscation the rules miss).
 
@@ -59,7 +59,7 @@ Fast, offline: normaliser cases (each obfuscation type), every rule's positive/n
 ## Done means
 
 - Pipeline reproducible from a clean clone: build data, train, eval, export demo, serve; commands in README.
-- All reported numbers come from `sentinel eval` on this machine and match `docs/data/eval.json`.
+- All reported numbers come from `sentinel eval` on the machine I train on and match `docs/data/eval.json`.
 - Hard-benign FPR and the OOD results reported honestly with intervals; limitations section covers multilingual, adaptive attackers, no-guarantee nature, over-defense.
 - Tests and ruff pass; UI screenshot-checked at both sizes, no console errors; static `docs/` works from a plain file server; clean history under Aditya's identity; no AI mentions anywhere.
 

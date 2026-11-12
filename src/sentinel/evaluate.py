@@ -1,7 +1,6 @@
 """Full evaluation: every system on every test set, thresholds chosen on validation only.
 
     sentinel eval                    # writes docs/data/eval.json, docs/data/stream.json, docs/data/rules.json
-    sentinel eval --skip-external    # skip the ProtectAI zero-shot comparison
 
 Scores are cached under runs/scores/ so re-running is cheap; --refresh recomputes them.
 """
@@ -95,8 +94,7 @@ def _latency(fn, items: list[str], reps: int = 1) -> dict:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Evaluate Sentinel and baselines")
-    ap.add_argument("--model-dir", default="models/sentinel-deberta-xsmall")
-    ap.add_argument("--skip-external", action="store_true")
+    ap.add_argument("--model-dir", default="models/sentinel-minilm")
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--threads", type=int, default=6)
     ap.add_argument("--latency-n", type=int, default=150)
@@ -144,16 +142,6 @@ def main(argv: list[str] | None = None) -> None:
         "length_only_roc_auc": {n: auc_roc(Y[n], length_only[n]) for n in ("indist", "deepset", "spml")},
         "label_shuffled_tfidf_roc_auc": {n: auc_roc(Y[n], shuffled_scores[n]) for n in shuffled_scores},
     }
-
-    # --- ProtectAI zero-shot
-    ext = None
-    if not a.skip_external:
-        from .external import ProtectAIDetector
-
-        print("scoring ProtectAI (zero-shot)", flush=True)
-        ext = ProtectAIDetector(threads=a.threads)
-        val_scores["protectai"] = _cached("protectai__val", lambda: ext.score(val_t), refresh, len(val_t))
-        systems["protectai"] = {n: _cached(f"protectai__{n}", lambda n=n: ext.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
 
     # --- thresholds on validation only
     sent = Sentinel(clf, Thresholds())
@@ -207,9 +195,6 @@ def main(argv: list[str] | None = None) -> None:
         put("rules_only", n, rb, None, None, ra)
         put("classifier", n, systems["classifier"][n] >= th.t_block, systems["classifier"][n], th.t_block)
         put("tfidf", n, systems["tfidf"][n] >= sys_thr["tfidf"], systems["tfidf"][n], sys_thr["tfidf"])
-        if "protectai" in systems:
-            put("protectai_default", n, systems["protectai"][n] >= 0.5, systems["protectai"][n], 0.5)
-            put("protectai_val_fpr1", n, systems["protectai"][n] >= sys_thr["protectai"], systems["protectai"][n], sys_thr["protectai"])
         del sc
 
     # --- curves for classifier-style systems on the pooled "scored" sets
@@ -277,8 +262,6 @@ def main(argv: list[str] | None = None) -> None:
     t0 = time.perf_counter()
     clf.score(lat_items[:64])
     latency["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
-    if ext is not None:
-        latency["protectai_single"] = _latency(lambda t: ext.score([t]), lat_items[:60])
 
     # --- stored scores for the threshold slider in the UI (rounded, compact)
     slider = {n: {"y": Y[n].tolist(), "s": [round(float(x), 3) for x in systems["classifier"][n]]} for n in pooled_n}

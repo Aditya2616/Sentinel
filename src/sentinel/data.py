@@ -144,7 +144,7 @@ def build() -> dict:
     def combine(names: list[str]) -> list[dict]:
         return [dict(r, pool=n) for n in names for r in pools[n]]
 
-    train = combine(["nc_train", "jb_train", "dolly_train", "hw_attacks_train", "hw_hard_benign_train", "hw_obfuscated_train"])
+    train = combine(["nc_train", "jb_train", "hw_attacks_train", "hw_hard_benign_train", "hw_obfuscated_train"])
     val = combine(["nc_val", "jb_val", "dolly_val", "hw_attacks_val", "hw_hard_benign_val", "hw_obfuscated_val"])
     tests = {
         "indist": combine(["nc_test", "jb_test"]),

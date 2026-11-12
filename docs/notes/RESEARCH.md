@@ -1,6 +1,6 @@
 # Sentinel: research notes
 
-Phase 1 findings. Licences marked "API" were read from the Hugging Face API on this machine (2026-11-12); everything else is from the linked sources and flagged where I have not verified it.
+Research notes from before the build. Licences marked "API" were read from the Hugging Face API (2026-11-12); everything else is from the linked sources and flagged where I have not verified it.
 
 ## 1. The threat
 
@@ -18,7 +18,7 @@ Phase 1 findings. Licences marked "API" were read from the Hugging Face API on t
 
 | Tool | Licence | Notes |
 |---|---|---|
-| ProtectAI `deberta-v3-base-prompt-injection-v2` | Apache-2.0 (API), 184M params | Binary injection classifier, base deberta-v3-base. Training data mix includes some non-commercial-risk sources per third-party notes; weights themselves Apache-2.0. Good comparison baseline (~0.7 GB download). Reported over-defense (InjecGuard). |
+| ProtectAI `deberta-v3-base-prompt-injection-v2` | Apache-2.0 (API), 184M params | Binary injection classifier, base deberta-v3-base. Training data mix includes some non-commercial-risk sources per third-party notes; weights themselves Apache-2.0. Would have been a good comparison baseline (~0.7 GB download); I did not run it. Reported over-defense (InjecGuard). |
 | Meta Prompt Guard 2 (22M / 86M) | Llama 4 community, gated | Excluded, see above. |
 | LLM Guard (Protect AI) | MIT (secondary sources) | Scanner library, wraps the ProtectAI model. Reference design for input/output scanners with risk scores. |
 | Rebuff | open source | Heuristics + LLM check + vector DB of known attacks + canary tokens. Canary tokens are a worthwhile idea for prompt-leak detection but need the downstream model, so out of scope (noted in SPEC as future work). |
@@ -47,7 +47,7 @@ Known issues to handle: duplicate and near-duplicate prompts across sources (ded
 
 Candidates (licences from API): `microsoft/deberta-v3-xsmall` (MIT, ~22M backbone + 48M embeddings), `microsoft/deberta-v3-small` (MIT, ~44M backbone), `microsoft/MiniLM-L12-H384-uncased` (MIT, 33M), `answerdotai/ModernBERT-base` (Apache-2.0, 149M), `distilbert-base-uncased` (Apache-2.0, 67M), `google/electra-small-discriminator` (Apache-2.0, 14M). DeBERTa-v3 beats MiniLMv2-small by ~1.2 pts on MNLI and beats ModernBERT on sample efficiency in a controlled comparison (<https://arxiv.org/abs/2504.08716>); ProtectAI and deepset both chose DeBERTa-v3 for this task.
 
-**Choice: `deberta-v3-xsmall`** (fast on 12 CPU cores, MIT, trainable in minutes at max length 128-256), with `deberta-v3-small` as a measured second run if the metric gap justifies it. Baseline: TF-IDF (word + char n-grams) + logistic regression. External comparison: ProtectAI v2 (Apache-2.0), evaluated zero-shot on the same test sets with latency.
+**Original choice: `deberta-v3-xsmall`.** On the CPU I train on, a DeBERTa step took far too long, so the shipped model is `sentence-transformers/all-MiniLM-L6-v2` (Apache-2.0, 22M parameters) fine-tuned as a classifier; see `MODEL_CARD.md`. Baselines: rules only, and TF-IDF (word + char n-grams) + logistic regression. A comparison against the ProtectAI v2 detector was planned and not run.
 
 Environment checked: transformers 5.7.0, torch 2.11.0+cpu, scikit-learn 1.8.0, fastapi 0.136.1, 12 CPU threads. Transformers 5 API changes (Trainer args, tokenizer behaviour) must be verified against installed docs during build; I will write a plain PyTorch loop if Trainer causes friction.
 
