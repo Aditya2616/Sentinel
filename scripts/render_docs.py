@@ -25,9 +25,8 @@ LABEL = {
     "dolly_benign": "Everyday benign (Dolly-15k held out)",
     "indirect": "Indirect injection in documents (SYNTHETIC)",
 }
-SYS = {"rules_only": "Rules only", "tfidf": "TF-IDF + LR", "classifier": "Classifier only", "sentinel": "Sentinel (rules + classifier)"}
-if "classifier_alt" in R:
-    SYS = {"rules_only": SYS["rules_only"], "tfidf": SYS["tfidf"], "classifier_alt": "Other encoder, classifier only", "classifier": SYS["classifier"], "sentinel": SYS["sentinel"]}
+LBL = E["meta"].get("system_labels", {})
+SYS = {k: LBL[k] for k in ("rules_only", "tfidf", "classifier_alt", "classifier", "sentinel") if k in R and k in LBL}
 
 
 def pc(x, d=1):
@@ -56,13 +55,15 @@ def headline() -> str:
         counts = cnt.format(**c, n_pos=e["n_pos"], n_neg=e["n_neg"])
         iv = e.get(kc)
         out.append(f"| {name} | {pc(e[k])} | {f'{iv[0] * 100:.1f}% to {iv[1] * 100:.1f}%' if iv else 'n/a'} | {counts} |")
+    d = s["deepset"]
+    out.append(f"| Recall on deepset counting a flag as a catch (flagged prompts still reach the model) | {pc(d['alert']['recall'])} | | n={d['n_pos']} attacks |")
     i = s["indist"]
     out.append(f"| In-distribution F1 (secondary; the training data is partly synthetic) | {num(i['f1'])} | | n={i['n']} |")
     return "\n".join(out)
 
 
 def per_set() -> str:
-    out = ["| Test set | n (attacks / benign) | System | Recall | FPR | F1 | ROC-AUC |", "|---|---|---|---|---|---|---|"]
+    out = ["| Test set | n (attacks / benign) | System | Recall (block) | Recall (flag or block) | FPR (block) | F1 | ROC-AUC |", "|---|---|---|---|---|---|---|---|"]
     for n, lab in LABEL.items():
         for sname, sl in SYS.items():
             e = R[sname][n]
@@ -70,6 +71,7 @@ def per_set() -> str:
             out.append(
                 f"| {lab if sname == 'rules_only' else ''} | {tag} | {sl} | "
                 f"{pc(e['recall']) if e['n_pos'] else 'n/a'}{ci(e.get('recall_ci')) if e['n_pos'] else ''} | "
+                f"{pc(e['alert']['recall']) if 'alert' in e and e['n_pos'] else '-'} | "
                 f"{pc(e['fpr']) if e['n_neg'] else 'n/a'}{ci(e.get('fpr_ci')) if e['n_neg'] else ''} | "
                 f"{num(e['f1']) if e['n_pos'] and e['n_neg'] else 'n/a'} | {num(e.get('roc_auc'))} |"
             )
@@ -125,15 +127,15 @@ def training() -> str:
     lines = _train_lines(m["training_log"], "Shipped default")
     if m.get("alt_training_log"):
         lines += _train_lines(m["alt_training_log"], "Compared")
-        best = max(m["training_log"]["epochs"], key=lambda e: e["val_pr_auc"])["val_pr_auc"]
-        alt = max(m["alt_training_log"]["epochs"], key=lambda e: e["val_pr_auc"])["val_pr_auc"]
-        lines.append(f"- Selection: best validation PR-AUC {best:.4f} for the default against {alt:.4f} for the other encoder; the higher validation score is the default. Test sets played no part in the choice.")
-    bench = ROOT / "docs" / "data" / "cpu_train_bench.json"
-    if bench.exists():
+        lines.append(
+            "- Selection rule, fixed before I looked at any test set: among variants trained on the same data, take the highest OOD-dev recall at the validation 1%-FPR threshold, "
+            "provided the validation hard-benign false-positive rate does not rise and validation PR-AUC drops by no more than 0.005. See the ablation table."
+        )
+    for bench in sorted((ROOT / "docs" / "data").glob("cpu_train_bench*.json")):
         b = json.loads(bench.read_text(encoding="utf-8"))
         lines.append(
-            f"- CPU (estimate): `scripts/bench_cpu_train.py` timed {b['steps_timed']} real steps of the default model at {b['seconds_per_step']} s/step with {b['threads']} threads "
-            f"({b['cpu_count']} logical cores; {b['load']}), which extrapolates to about {b['estimated_minutes_for_full_run']} minutes for the {b['steps_per_run']} steps of a full run, "
+            f"- CPU training time, **estimate** for `{b['base']}`: `scripts/bench_cpu_train.py` timed {b['steps_timed']} real steps at {b['seconds_per_step']} s/step with {b['threads']} threads "
+            f"({b['cpu_count']} logical cores; {b['load']}), which extrapolates to about {b['estimated_minutes_for_full_run']} minutes for {b['epochs']} epochs ({b['steps_per_run']} steps), "
             "excluding validation passes. It is an extrapolation, and a busier machine is slower."
         )
     sizes = m["build_report"]["sizes"]
@@ -148,12 +150,61 @@ def shortcuts() -> str:
     return f"- Length-only logistic regression, ROC-AUC: {a} (0.50 is chance).\n- TF-IDF trained on shuffled labels, ROC-AUC: {b} (should be near 0.50)."
 
 
+def operating() -> str:
+    """Recall when the score threshold is set to a fixed false-positive rate on each set's own benign side."""
+    rows = [("deepset", "deepset (OOD)"), ("spml", "SPML OOD-test"), ("indist", "In-distribution"), ("obfuscated", "Obfuscated"), ("indirect", "Indirect (synthetic)")]
+    keys = [k for k in ("classifier", "classifier_alt", "tfidf") if k in R]
+    out = ["| Test set | " + " | ".join(f"{LBL[k]} @1% / @5% FPR" for k in keys) + " |", "|---|" + "---|" * len(keys)]
+    for n, lab in rows:
+        cells = []
+        for k in keys:
+            r = R[k][n].get("recall_at_fpr")
+            cells.append("n/a" if not r else f"{pc(r['0.01'])} / {pc(r['0.05'])}")
+        out.append(f"| {lab} | " + " | ".join(cells) + " |")
+    return "\n".join(out)
+
+
+def before_after() -> str:
+    p = ROOT / "docs" / "data" / "baseline_v1.json"
+    if not p.exists():
+        return "No baseline recorded."
+    B = json.loads(p.read_text(encoding="utf-8"))["results"]
+    rows = [("deepset", "deepset (OOD, untouched)"), ("spml", "SPML OOD-test"), ("spml_dev", "SPML OOD-dev (selection only)"), ("indist", "In-distribution"), ("obfuscated", "Obfuscated"), ("attacks", "Plain attacks"), ("indirect", "Indirect (SYNTHETIC)")]
+    out = ["| Set | Recall block, before | after | Recall flag-or-block, before | after | Classifier recall @1% FPR, before | after |", "|---|---|---|---|---|---|---|"]
+    for n, lab in rows:
+        b, a = B["sentinel"][n], R["sentinel"][n]
+        bq, aq = B["classifier"][n].get("recall_at_fpr"), R["classifier"][n].get("recall_at_fpr")
+        out.append(
+            f"| {lab} | {pc(b['recall'])} | {pc(a['recall'])} | {pc(b['alert']['recall'])} | {pc(a['alert']['recall'])} | "
+            f"{pc(bq['0.01']) if bq else 'n/a'} | {pc(aq['0.01']) if aq else 'n/a'} |"
+        )
+    out += ["", "| Benign side | False-positive rate (block), before | after | n |", "|---|---|---|---|"]
+    for n, lab in [("hard_benign", "Hard-benign (talks about injection)"), ("dolly_benign", "Everyday (Dolly-15k held out)"), ("spml", "SPML OOD-test benign"), ("deepset", "deepset benign")]:
+        b, a = B["sentinel"][n], R["sentinel"][n]
+        out.append(f"| {lab} | {pc(b['fpr'])} [{b['confusion']['fp']} of {b['n_neg']}] | {pc(a['fpr'])} [{a['confusion']['fp']} of {a['n_neg']}] | {a['n_neg']} |")
+    return "\n".join(out)
+
+
+def ablation() -> str:
+    p = ROOT / "docs" / "data" / "ablation.json"
+    if not p.exists():
+        return "No ablation recorded."
+    rows = json.loads(p.read_text(encoding="utf-8"))
+    out = ["| Variant (selection uses validation + OOD-dev only) | Train rows | Epochs run | Val PR-AUC | OOD-dev PR-AUC | OOD-dev recall @ val 1% FPR | OOD-dev FPR | Val hard-benign FPR |", "|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        out.append(
+            f"| {r['variant']} | {r['train_rows']} | {r['epochs_run']} | {r['val_pr_auc']:.4f} | {r['dev_pr_auc']:.4f} | {pc(r['dev_recall_at_that_threshold'])} | "
+            f"{pc(r['dev_fpr_at_that_threshold'])} | {pc(r['val_hard_benign_fpr_at_that_threshold'])} (n={r['val_hard_benign_n']}) |"
+        )
+    return "\n".join(out)
+
+
 def errors() -> str:
     e = E["errors"]
     return f"Sentinel blocked {len(e['false_positives'])} benign test prompts and let {len(e['false_negatives'])} attacks through (first 60 of each are stored in `docs/data/eval.json` under `errors`)."
 
 
-BLOCKS = {"headline": headline, "per_set": per_set, "language": language, "latency": latency, "thresholds": thresholds, "training": training, "shortcuts": shortcuts, "errors": errors}
+BLOCKS = {"headline": headline, "per_set": per_set, "language": language, "latency": latency, "thresholds": thresholds, "training": training, "shortcuts": shortcuts, "errors": errors, "operating": operating, "before_after": before_after, "ablation": ablation}
 
 
 def fill(path: Path) -> None:

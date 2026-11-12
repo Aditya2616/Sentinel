@@ -7,11 +7,14 @@ sets under data/hand_written are committed. `build()` writes data/processed/*.js
 from __future__ import annotations
 
 import json
+import random
 import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from .augment import augment
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / "data" / "raw"
@@ -24,6 +27,8 @@ SOURCES: dict[str, dict] = {
     "jackhhao/jailbreak-classification": {"rev": "2f2ceeb39658696fd3f462403562b6eea5306287", "license": "apache-2.0", "patterns": ["default/*", "README.md"]},
     "deepset/prompt-injections": {"rev": "4f61ecb038e9c3fb77e21034b22511b523772cdd", "license": "apache-2.0", "patterns": ["data/*", "README.md"]},
     "reshabhs/SPML_Chatbot_Prompt_Injection": {"rev": "02ce8084e979bc7d4c24ee35d22ecb7f2db96ff5", "license": "mit", "patterns": ["*.csv", "README.md"]},
+    "hendzh/PromptShield": {"rev": "a5234cb1f5cdb256600cab64b8c961195b5e8404", "license": "apache-2.0", "patterns": ["train.json", "README.md"]},
+    "Lakera/gandalf_ignore_instructions": {"rev": "04737b65e90a6794ec227012e4a255a7def6344b", "license": "mit", "patterns": ["data/train-*", "data/validation-*", "README.md"]},
     "databricks/databricks-dolly-15k": {"rev": "bdd27f4d94b9c1f951818a7da7fd7aeea5dbff1a", "license": "cc-by-sa-3.0", "patterns": ["*.jsonl", "README.md"]},
 }
 
@@ -107,7 +112,29 @@ def _load_all() -> dict[str, list[dict]]:
     sp = sp[sp["text"].astype(str).str.len() <= 1500]
     pos = sp[sp["label"] == 1].sample(600, random_state=3)
     neg = sp[sp["label"] == 0].sample(600, random_state=3)
-    pools["spml"] = _rows(pd.concat([pos, neg]), "text", "label", "spml", None)
+    sp_all = _rows(pd.concat([pos, neg]), "text", "label", "spml", None)
+    # fixed-seed 50/50 split, stratified by label: the dev half is for model selection only, the test half is reported
+    order = np.random.RandomState(21).permutation(len(sp_all))
+    dev_idx, test_idx = [], []
+    for lab in (0, 1):
+        ids = [i for i in order if sp_all[i]["label"] == lab]
+        dev_idx += ids[: len(ids) // 2]
+        test_idx += ids[len(ids) // 2 :]
+    pools["spml_dev"] = [sp_all[i] for i in sorted(dev_idx)]
+    pools["spml"] = [sp_all[i] for i in sorted(test_idx)]
+    # extra public training data: realistic instruction+data prompts (PromptShield) and human Gandalf injections (Lakera)
+    ps = json.loads((local_dir("hendzh/PromptShield") / "train.json").read_text(encoding="utf-8"))
+    ps = [x for x in ps if 20 <= len(x["prompt"].strip()) <= 800]  # fits the 256-token training window, so the label is visible
+    prng = random.Random(5)
+    prng.shuffle(ps)
+    take: dict[int, list[dict]] = {0: [], 1: []}
+    for x in ps:
+        if len(take[int(x["label"])]) < 2000:
+            take[int(x["label"])].append({"text": x["prompt"].strip(), "label": int(x["label"]), "category": "promptshield", "source": "promptshield"})
+    pools["ps_train"] = take[0] + take[1]
+    gd = local_dir("Lakera/gandalf_ignore_instructions") / "data"
+    g = pd.concat([pd.read_parquet(p) for p in sorted(gd.glob("*.parquet"))], ignore_index=True)
+    pools["gandalf_train"] = [{"text": str(t), "label": 1, "category": "gandalf", "source": "gandalf"} for t in g["text"]]
     dl = pd.read_json(local_dir("databricks/databricks-dolly-15k") / "databricks-dolly-15k.jsonl", lines=True)
     dl = dl[(dl["instruction"].str.len() >= 8) & (dl["instruction"].str.len() <= 600)].sample(frac=1.0, random_state=11)
     ins = dl["instruction"].tolist()
@@ -144,12 +171,18 @@ def build() -> dict:
     def combine(names: list[str]) -> list[dict]:
         return [dict(r, pool=n) for n in names for r in pools[n]]
 
-    train = combine(["nc_train", "jb_train", "hw_attacks_train", "hw_hard_benign_train", "hw_obfuscated_train"])
+    base_names = ["nc_train", "jb_train", "hw_attacks_train", "hw_hard_benign_train", "hw_obfuscated_train"]
+    train_base = combine(base_names)
+    aug_rows = [dict(r, pool="augmented") for r in augment(train_base)]
+    extra_rows = combine(["ps_train", "gandalf_train"])
+    train_variants = {"train_base": train_base, "train_aug": train_base + aug_rows, "train_ext": train_base + extra_rows}
+    train = train_base + extra_rows + [dict(r, pool="augmented") for r in augment(train_base + extra_rows)]
     val = combine(["nc_val", "jb_val", "dolly_val", "hw_attacks_val", "hw_hard_benign_val", "hw_obfuscated_val"])
     tests = {
         "indist": combine(["nc_test", "jb_test"]),
         "deepset": combine(["deepset"]),
         "spml": combine(["spml"]),
+        "spml_dev": combine(["spml_dev"]),
         "hard_benign": combine(["hw_hard_benign_test"]),
         "attacks": combine(["hw_attacks_test"]),
         "obfuscated": combine(["hw_obfuscated_test"]),
@@ -168,6 +201,7 @@ def build() -> dict:
         report["dropped"][f"{name}_internal_exact"] = len(rows) - len(out)
         return out
 
+    variants_dd = {k: dedupe_within(v, k) for k, v in train_variants.items()}
     train = dedupe_within(train, "train")
     train_keys = {norm_key(r["text"]) for r in train}
     n0 = len(val)
@@ -184,7 +218,7 @@ def build() -> dict:
             report["dropped"][f"test_{name}_near_dup_in_train"] = int(mask.sum())
             kept = [r for r, m in zip(kept, mask, strict=True) if not m]
         tests[name] = kept
-    sets = {"train": train, "val": val, **{f"test_{k}": v for k, v in tests.items()}}
+    sets = {"train": train, **variants_dd, "val": val, **{f"test_{k}": v for k, v in tests.items()}}
     for name, rows in sets.items():
         with (PROCESSED / f"{name}.jsonl").open("w", encoding="utf-8", newline="\n") as f:
             for r in rows:

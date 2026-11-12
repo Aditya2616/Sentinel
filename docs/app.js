@@ -72,6 +72,7 @@ async function boot() {
   for (const r of rules) state.rules[r.id] = r;
   setMode();
   setupHero();
+  window.sentinelStage = hero;  // read by scripts/ui_check.py to time the README screenshots
   setupInspector();
   if (evalj) renderMetrics(); else $('#metrics-body').append(h('p', { class: 'empty', text: 'No evaluation recorded yet. Run `sentinel eval`.' }));
   setupAudit();
@@ -96,7 +97,7 @@ function setMode() {
 /* ---------------------------------------------------------------- hero stage */
 function setupHero() {
   const items = state.stream?.items || [];
-  hero = new Stage($('#stage'), { reduced: REDUCED, onDecision: onDecision, onPick: (it) => selectItem(it, true) });
+  hero = new Stage($('#stage'), { reduced: REDUCED, onDecision: onDecision, onPick: (it) => { setPaused(true); selectItem(it, true); } });
   hero.setItems(items);
   const count = { allow: $('#c-allow'), flag: $('#c-flag'), block: $('#c-block'), err: $('#c-err') };
   function updateCounts(c) {
@@ -104,18 +105,19 @@ function setupHero() {
     count.err.textContent = c.miss + c.falseAlarm;
   }
   state.updateCounts = updateCounts;
-  $('#play').addEventListener('click', (e) => {
-    const on = e.currentTarget.getAttribute('aria-pressed') !== 'true';
-    e.currentTarget.setAttribute('aria-pressed', String(on));
-    e.currentTarget.textContent = on ? 'Pause' : 'Play';
-    hero.setPlaying(!on);
-  });
+  $('#play').addEventListener('click', () => setPaused($('#play').getAttribute('aria-pressed') !== 'true'));
   $$('[data-speed]').forEach((b) => b.addEventListener('click', () => {
     hero.setSpeed(+b.dataset.speed);
     $$('[data-speed]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   }));
   $('#ticker').addEventListener('click', () => state.lastItem && selectItem(state.lastItem, true));
   if (!items.length) $('#ticker .txt').textContent = 'No recorded stream found (run `sentinel eval`).';
+}
+function setPaused(paused) {
+  const b = $('#play');
+  b.setAttribute('aria-pressed', String(paused));
+  b.textContent = paused ? 'Play' : 'Pause';
+  hero.setPlaying(!paused);
 }
 function onDecision(it, c) {
   state.updateCounts?.(c);
@@ -280,9 +282,10 @@ const SHORT = { indist: 'In-dist', deepset: 'deepset (OOD)', spml: 'SPML (OOD)',
 function ci(a) { return a ? `${(a[0] * 100).toFixed(1)}–${(a[1] * 100).toFixed(1)}` : ''; }
 function renderMetrics() {
   const E = state.eval, R = E.results, S = R.sentinel;
-  const short = (m) => (m || '').split('/').pop();
-  if (E.meta.model) SERIES.classifier[0] = short(E.meta.model) + ' (default)';
-  if (E.meta.alt_model) { SERIES.alt[0] = short(E.meta.alt_model); SYS.find((x) => x[0] === 'classifier_alt')[1] = short(E.meta.alt_model) + ' alone'; }
+  const LBL = E.meta.system_labels || {};
+  for (const row of SYS) if (LBL[row[0]]) row[1] = LBL[row[0]];
+  if (LBL.classifier) SERIES.classifier[0] = LBL.classifier;
+  if (LBL.classifier_alt) SERIES.alt[0] = LBL.classifier_alt;
   const cards = $('#cards');
   const hb = S.hard_benign, ds = S.deepset, sp = S.spml, lat = E.latency.sentinel_full;
   const mk = (label, v, c, n) => h('div', { class: 'card' }, h('div', { class: 'label', text: label }), h('div', { class: 'v', text: v }), h('div', { class: 'ci', text: c }), h('div', { class: 'n', text: n }));
@@ -290,7 +293,7 @@ function renderMetrics() {
     mk('False alarms on hard benign text', pct(hb.fpr), `95% CI ${ci(hb.fpr_ci)}%`, `${hb.confusion.fp} of ${hb.n_neg} benign prompts that talk about injection were blocked.`),
     mk('Attack recall, deepset (OOD)', pct(ds.recall), `95% CI ${ci(ds.recall_ci)}%`, `Held-out, never trained on. English ${pct(E.deepset_by_language.en?.recall, 0)}, German ${pct(E.deepset_by_language.de?.recall, 0)}.`),
     mk('Attack recall, SPML (OOD)', pct(sp.recall), `95% CI ${ci(sp.recall_ci)}%`, `${sp.n_pos} attacks from a different construction. FPR on its benign side ${pct(sp.fpr)}.`),
-    mk('Latency per prompt', `${lat.p50_ms.toFixed(0)} ms`, `p95 ${lat.p95_ms.toFixed(0)} ms`, `Full pipeline, one prompt at a time, CPU, ${E.latency.threads} threads. Shared machine: a ballpark.`),
+    mk('Latency per prompt (CPU)', `${lat.p50_ms.toFixed(0)} ms`, `p95 ${lat.p95_ms.toFixed(0)} ms${E.latency.gpu ? ` · GPU: ${E.latency.gpu.sentinel_full.p50_ms.toFixed(0)} ms p50` : ''}`, `Full pipeline, one prompt at a time, ${E.latency.threads} CPU threads. Load when measured: ${(E.latency.load || 'not recorded').replace('system-wide CPU utilisation ', '').replace(' just before the run', '')} CPU use. A busy machine inflates this: a ballpark.`),
   );
   const tb = $('#sys-table');
   const head = h('tr', {}, h('th', { text: 'System' }), SETS.map((k) => h('th', { text: SHORT[k] })));

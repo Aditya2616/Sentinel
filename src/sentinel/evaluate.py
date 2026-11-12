@@ -35,17 +35,35 @@ from .sysinfo import load_note
 ROOT = D.ROOT
 OUT = ROOT / "docs" / "data"
 SCORES = ROOT / "runs" / "scores"
-TEST_SETS = ["indist", "deepset", "spml", "hard_benign", "obfuscated", "attacks", "dolly_benign", "indirect"]
+TEST_SETS = ["indist", "deepset", "spml", "spml_dev", "hard_benign", "obfuscated", "attacks", "dolly_benign", "indirect"]
 SET_LABEL = {
     "indist": "In-distribution (neuralchemy + jackhhao test, de-duplicated)",
     "deepset": "OOD: deepset/prompt-injections (EN + DE)",
-    "spml": "OOD: SPML chatbot prompts (subsample)",
+    "spml": "OOD-test: SPML chatbot prompts (half, fixed-seed split)",
+    "spml_dev": "OOD-dev: other half of SPML (model selection only, never reported as a result)",
     "hard_benign": "Hard benign: talks about injection (hand-written)",
     "obfuscated": "Obfuscated attacks + obfuscated benign (hand-written)",
     "attacks": "Plain attacks (hand-written)",
     "dolly_benign": "Everyday benign (Dolly-15k held-out)",
     "indirect": "Indirect injection in documents (SYNTHETIC, small)",
 }
+
+
+SHORT_NAMES = {"sentence-transformers/all-MiniLM-L6-v2": "MiniLM-L6", "microsoft/deberta-v3-xsmall": "DeBERTa-v3-xsmall"}
+
+
+def system_labels(default_model: str, alt_model: str | None) -> dict[str, str]:
+    """One name per system, used identically in the README, model card, UI and eval.json."""
+    short = lambda m: SHORT_NAMES.get(m, m.split("/")[-1])  # noqa: E731
+    labels = {
+        "sentinel": "Sentinel (rules + classifier + decision)",
+        "classifier": f"{short(default_model)} classifier (default)",
+        "rules_only": "Rules only",
+        "tfidf": "TF-IDF + logistic regression",
+    }
+    if alt_model:
+        labels["classifier_alt"] = f"{short(alt_model)} classifier"
+    return labels
 
 
 def _src(name: str) -> str:
@@ -108,11 +126,57 @@ def _latency(fn, items: list[str], reps: int = 1) -> dict:
     return {"n": len(a), "p50_ms": float(np.percentile(a, 50)), "p95_ms": float(np.percentile(a, 95)), "mean_ms": float(a.mean())}
 
 
+def measure_latency(model_dir: Path, th: Thresholds, base: TfidfBaseline, tests: dict, n_items: int, cpu_threads: int, device: str | None) -> dict:
+    """Per-prompt latency. CPU figures come from a dedicated CPU copy of the model (never the GPU one), with the
+    machine's load recorded beside them; the GPU figure, when a GPU is available, is reported separately."""
+    import torch
+
+    from .classifier import TransformerClassifier, pick_device
+
+    pool = [r["text"] for n in ("dolly_benign", "hard_benign", "attacks", "indist", "deepset") for r in tests[n]]
+    rs = np.random.RandomState(5)
+    items = [pool[i] for i in rs.choice(len(pool), min(n_items, len(pool)), replace=False)]
+    load = load_note()  # measured before the model is loaded, so it reflects the machine and not this process
+    clf_cpu = TransformerClassifier(model_dir, threads=cpu_threads, device="cpu")
+    torch.set_num_threads(cpu_threads)
+    sent_cpu = Sentinel(clf_cpu, th)
+    for t in items[:5]:
+        sent_cpu.screen(t, log=False)
+    latency = {
+        "rules_only": _latency(lambda t: scan(t), items),
+        "classifier_single": _latency(lambda t: clf_cpu.score([t]), items),
+        "sentinel_full": _latency(lambda t: sent_cpu.screen(t, log=False), items),
+        "tfidf": _latency(lambda t: base.score([t]), items),
+        "threads": cpu_threads,
+        "cpu": platform.processor(),
+        "device": "cpu",
+        "load": load,
+        "measured": time.strftime("%Y-%m-%d %H:%M"),
+        "note": f"CPU figures: {cpu_threads} torch threads, float32, {load}. Busy machines inflate them: treat as an upper-bound ballpark unless the load is low.",
+    }
+    t0 = time.perf_counter()
+    clf_cpu.score(items[:64])
+    latency["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
+    dev = pick_device(device)
+    if dev != "cpu":
+        clf = TransformerClassifier(model_dir, threads=2, device=dev)
+        sent = Sentinel(clf, th)
+        sent.screen(items[0], log=False)
+        latency["gpu"] = {"device": dev, "classifier_single": _latency(lambda t: clf.score([t]), items), "sentinel_full": _latency(lambda t: sent.screen(t, log=False), items)}
+        t0 = time.perf_counter()
+        clf.score(items[:64])
+        latency["gpu"]["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
+    return latency
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Evaluate Sentinel and baselines")
     ap.add_argument("--model-dir", default="models/sentinel")
+    ap.add_argument("--train-set", default="train", help="training file used to fit the TF-IDF baseline (match the classifier's)")
     ap.add_argument("--also", default=None, help="a second trained classifier directory, reported as its own row next to the main one")
     ap.add_argument("--device", default=None, help="cuda | cpu | auto for scoring (latency is always measured on the CPU as well)")
+    ap.add_argument("--out", default=str(OUT), help="output directory for eval.json, stream.json, rules.json")
+    ap.add_argument("--latency-only", action="store_true", help="re-measure latency only and patch it into the existing eval.json (run on a quiet machine)")
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--latency-threads", type=int, default=3, help="CPU threads for the dedicated CPU latency measurement")
@@ -125,11 +189,19 @@ def main(argv: list[str] | None = None) -> None:
     from .classifier import TransformerClassifier
 
     model_dir = Path(a.model_dir)
+    if a.latency_only:
+        ej = Path(a.out) / "eval.json"
+        rec = json.loads(ej.read_text(encoding="utf-8"))
+        base_ = TfidfBaseline().fit([r["text"] for r in D.load(a.train_set)], [r["label"] for r in D.load(a.train_set)])
+        rec["latency"] = _clean(measure_latency(model_dir, Thresholds(**rec["meta"]["thresholds"]), base_, {n: D.load(f"test_{n}") for n in TEST_SETS}, a.latency_n, a.latency_threads, a.device))
+        ej.write_text(json.dumps(rec, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(json.dumps(rec["latency"]["note"]), flush=True)
+        return
     clf = TransformerClassifier(model_dir, threads=a.threads, device=a.device)
     scoring_device = f"{clf.device} (float32)"
     print(f"scoring device: {scoring_device}", flush=True)
     val = D.load("val")
-    train = D.load("train")
+    train = D.load(a.train_set)
     tests = {n: D.load(f"test_{n}") for n in TEST_SETS}
     Y = {n: np.array([r["label"] for r in rows]) for n, rows in tests.items()}
     T = {n: [r["text"] for r in rows] for n, rows in tests.items()}
@@ -141,8 +213,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # --- fine-tuned classifier (calibrated probability)
     print("scoring classifier", flush=True)
-    val_scores["classifier"] = _cached("clf__val", lambda: clf.score(val_t), refresh, len(val_t))
-    systems["classifier"] = {n: _cached(f"clf__{n}", lambda n=n: clf.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
+    val_scores["classifier"] = _cached(f"{model_dir.name}__val", lambda: clf.score(val_t), refresh, len(val_t))
+    systems["classifier"] = {n: _cached(f"{model_dir.name}__{n}", lambda n=n: clf.score(T[n]), refresh, len(T[n])) for n in TEST_SETS}
 
     # --- optional second classifier (reported raw, threshold at 1% validation FPR like the baseline)
     alt_name, alt_log = None, None
@@ -212,6 +284,9 @@ def main(argv: list[str] | None = None) -> None:
             entry["pr_auc"] = average_precision(y, score)
         if thr is not None:
             entry["threshold"] = float(thr)
+        if score is not None and entry["n_pos"] and entry["n_neg"]:
+            # operating curve read-out: recall when the threshold is set to hit a given FPR on this set's own benign side
+            entry["recall_at_fpr"] = {str(f): float(((score >= threshold_at_fpr(y, score, f)) & (y == 1)).sum() / y.sum()) for f in (0.01, 0.05)}
         if alert is not None:
             ca = confusion(y, alert)
             entry["alert"] = {"confusion": ca, **prf(ca)}
@@ -267,7 +342,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # --- errors worth showing (truncated)
     errors = {"false_positives": [], "false_negatives": []}
-    for n in TEST_SETS:
+    for n in [x for x in TEST_SETS if x != "spml_dev"]:
         for r, d in zip(tests[n], decisions[n], strict=True):
             row = {"set": n, "text": r["text"][:220], "score": d.score, "action": d.action, "rules": sorted({h.rule_id for h in d.hits}), "category": r.get("category")}
             if r["label"] == 0 and d.action == "block":
@@ -277,43 +352,9 @@ def main(argv: list[str] | None = None) -> None:
     errors["false_positives"] = errors["false_positives"][:60]
     errors["false_negatives"] = errors["false_negatives"][:60]
 
-    # --- latency on this CPU (machine was shared with other jobs: noted in the output)
+    # --- latency: CPU (dedicated CPU copy of the model) plus a separately labelled GPU figure
     print("measuring latency", flush=True)
-    pool = [r["text"] for n in ("dolly_benign", "hard_benign", "attacks", "indist", "deepset") for r in tests[n]]
-    rs = np.random.RandomState(5)
-    lat_items = [pool[i] for i in rs.choice(len(pool), min(a.latency_n, len(pool)), replace=False)]
-    # CPU numbers come from a dedicated CPU copy of the model (never the GPU one); the GPU figures are reported separately.
-    clf_cpu = TransformerClassifier(model_dir, threads=a.latency_threads, device="cpu")
-    torch.set_num_threads(a.latency_threads)
-    sent_cpu = Sentinel(clf_cpu, th)
-    for t in lat_items[:5]:
-        sent_cpu.screen(t, log=False)
-    load = load_note()
-    latency = {
-        "rules_only": _latency(lambda t: scan(t), lat_items),
-        "classifier_single": _latency(lambda t: clf_cpu.score([t]), lat_items),
-        "sentinel_full": _latency(lambda t: sent_cpu.screen(t, log=False), lat_items),
-        "tfidf": _latency(lambda t: base.score([t]), lat_items),
-        "threads": a.latency_threads,
-        "cpu": platform.processor(),
-        "device": "cpu",
-        "load": load,
-        "note": f"CPU figures: {a.latency_threads} torch threads, float32, {load}; the machine was shared with other jobs, so treat them as an upper-bound ballpark.",
-    }
-    if clf.device != "cpu":
-        sent.screen(lat_items[0], log=False)
-        latency["gpu"] = {
-            "device": clf.device,
-            "classifier_single": _latency(lambda t: clf.score([t]), lat_items),
-            "sentinel_full": _latency(lambda t: sent.screen(t, log=False), lat_items),
-        }
-        t0 = time.perf_counter()
-        clf.score(lat_items[:64])
-        latency["gpu"]["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
-    clf = clf_cpu  # the batch figure below is the CPU one
-    t0 = time.perf_counter()
-    clf.score(lat_items[:64])
-    latency["classifier_batch64_ms_per_prompt"] = (time.perf_counter() - t0) / 64 * 1000
+    latency = measure_latency(model_dir, th, base, tests, a.latency_n, a.latency_threads, a.device)
 
     # --- stored scores for the threshold slider in the UI (rounded, compact)
     slider = {n: {"y": Y[n].tolist(), "s": [round(float(x), 3) for x in systems["classifier"][n]]} for n in pooled_n}
@@ -329,6 +370,7 @@ def main(argv: list[str] | None = None) -> None:
         "model": clf.name,
         "scoring_device": scoring_device,
         "alt_model": alt_name,
+        "system_labels": system_labels(clf.name, alt_name),
         "alt_training_log": alt_log,
         "training_log": json.loads((model_dir / "training_log.json").read_text()) if (model_dir / "training_log.json").exists() else None,
         "sources": D.SOURCES,
@@ -337,10 +379,11 @@ def main(argv: list[str] | None = None) -> None:
         "pooled": pooled_conf,
     }
     out = {"meta": meta, "results": results, "curves": curves, "deepset_by_language": by_lang, "per_category_recall_indist": cats, "calibration": cal, "shortcuts": shortcuts, "errors": errors, "latency": latency, "slider": slider}
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "eval.json").write_text(json.dumps(_clean(out), ensure_ascii=False, separators=(",", ":"), default=float), encoding="utf-8")
-    (OUT / "stream.json").write_text(json.dumps(_clean(stream), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (OUT / "rules.json").write_text(json.dumps(rule_catalogue(), indent=1), encoding="utf-8")
+    out_dir = Path(a.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "eval.json").write_text(json.dumps(_clean(out), ensure_ascii=False, separators=(",", ":"), default=float), encoding="utf-8")
+    (out_dir / "stream.json").write_text(json.dumps(_clean(stream), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (out_dir / "rules.json").write_text(json.dumps(rule_catalogue(), indent=1), encoding="utf-8")
     print_summary(results)
 
 

@@ -50,14 +50,17 @@ def fit_temperature(logits: np.ndarray, y: np.ndarray) -> float:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Fine-tune the Sentinel classifier")
-    ap.add_argument("--base", default="sentence-transformers/all-MiniLM-L6-v2")
+    ap.add_argument("--base", default="microsoft/deberta-v3-xsmall")
     ap.add_argument("--out", default="models/sentinel")
-    ap.add_argument("--epochs", type=int, default=3)
-    ap.add_argument("--lr", type=float, default=8e-5)
+    ap.add_argument("--epochs", type=int, default=6)
+    ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=256)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--threads", type=int, default=3)
+    ap.add_argument("--train-set", default="train", help="processed training file: train, train_base, train_aug or train_ext")
+    ap.add_argument("--select-dev", default="spml_dev", help="extra held-out set (e.g. spml_dev) averaged with validation PR-AUC for choosing the epoch")
+    ap.add_argument("--patience", type=int, default=2, help="stop after this many epochs without improvement (0 = never)")
     ap.add_argument("--device", default=None, help="cuda | cpu | auto (default: auto, or SENTINEL_DEVICE)")
     ap.add_argument("--limit", type=int, default=0, help="debug: use only N training rows")
     a = ap.parse_args(argv)
@@ -80,7 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     if not (D.PROCESSED / "train.jsonl").exists():
         D.fetch()
         D.build()
-    train, val = D.load("train"), D.load("val")
+    train, val = D.load(a.train_set), D.load("val")
+    dev = D.load(f"test_{a.select_dev}") if a.select_dev else []
     if a.limit:
         random.Random(0).shuffle(train)
         train = train[: a.limit]
@@ -93,6 +97,7 @@ def main(argv: list[str] | None = None) -> None:
 
     Xtr, ytr = enc(train), [r["label"] for r in train]
     Xva, yva = enc(val), np.array([r["label"] for r in val])
+    Xdev, ydev = enc(dev), np.array([r["label"] for r in dev])
     rng = random.Random(a.seed)
     steps = a.epochs * ((len(Xtr) + a.batch_size - 1) // a.batch_size)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.01)
@@ -122,7 +127,7 @@ def main(argv: list[str] | None = None) -> None:
         return loss.item() * (len(idx) / total) if total else loss.item()
 
     log = {"base_model": a.base, "args": vars(a), "epochs": [], "n_train": len(Xtr), "n_val": len(Xva)}
-    best_state, best_ap = None, -1.0
+    best_state, best_ap, best_val, stale = None, -1.0, -1.0, 0
     t0 = time.time()
     model.train()
     step = 0
@@ -148,11 +153,19 @@ def main(argv: list[str] | None = None) -> None:
         m = predict(Xva)
         ap_val, auc = average_precision(yva, m), auc_roc(yva, m)
         acc = float(((m > 0) == yva.astype(bool)).mean())
-        log["epochs"].append({"epoch": ep + 1, "train_loss": run / len(batches), "val_pr_auc": ap_val, "val_roc_auc": auc, "val_acc@0": acc, "elapsed_s": time.time() - t0})
-        print(f"== epoch {ep + 1}: val PR-AUC {ap_val:.4f} ROC-AUC {auc:.4f} acc {acc:.4f}", flush=True)
-        if ap_val > best_ap:
-            best_ap = ap_val
+        dev_ap = average_precision(ydev, predict(Xdev)) if len(Xdev) else None
+        sel = ap_val if dev_ap is None else (ap_val + dev_ap) / 2
+        log["epochs"].append({"epoch": ep + 1, "train_loss": run / len(batches), "val_pr_auc": ap_val, "val_roc_auc": auc, "val_acc@0": acc, "dev_pr_auc": dev_ap, "select_score": sel, "elapsed_s": time.time() - t0})
+        print(f"== epoch {ep + 1}: val PR-AUC {ap_val:.4f} ROC-AUC {auc:.4f} acc {acc:.4f} dev PR-AUC {dev_ap if dev_ap is None else round(dev_ap, 4)}", flush=True)
+        if sel > best_ap:
+            best_ap, stale = sel, 0
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+            best_val = ap_val
+        else:
+            stale += 1
+            if a.patience and stale >= a.patience:
+                print(f"early stop after epoch {ep + 1}", flush=True)
+                break
     model.load_state_dict(best_state)
     m = predict(Xva)
     T = fit_temperature(m, yva)
@@ -165,7 +178,7 @@ def main(argv: list[str] | None = None) -> None:
     log["device"] = device
     log["gpu"] = torch.cuda.get_device_name(0) if device == "cuda" else None
     log["torch"] = torch.__version__
-    (out / "calibration.json").write_text(json.dumps({"temperature": T, "base_model": a.base, "max_length": a.max_length, "val_pr_auc": best_ap}, indent=2))
+    (out / "calibration.json").write_text(json.dumps({"temperature": T, "base_model": a.base, "max_length": a.max_length, "val_pr_auc": best_val, "select_score": best_ap, "select_dev": a.select_dev or None, "train_set": a.train_set}, indent=2))
     (out / "training_log.json").write_text(json.dumps(log, indent=2))
     print(f"saved {out}  temperature={T:.3f}  train time {log['train_seconds']:.0f}s")
 
