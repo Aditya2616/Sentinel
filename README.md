@@ -362,13 +362,13 @@ Chosen on the validation split only. Rule, fixed before the round-two models wer
 | Path | p50 (ms) | p95 (ms) |
 |---|---|---|
 | Rules only | 0.2 | 1.7 |
-| Classifier, one prompt at a time | 70.2 | 145.3 |
-| Full Sentinel, one prompt | 73.0 | 174.3 |
-| TF-IDF + LR | 0.9 | 2.0 |
+| Classifier, one prompt at a time | 37.6 | 70.0 |
+| Full Sentinel, one prompt | 37.4 | 94.0 |
+| TF-IDF + LR | 0.5 | 1.2 |
 
-CPU, classifier in batches of 64: 109.6 ms per prompt. CPU figures: 3 torch threads, float32, system-wide CPU utilisation 74% just before the run. Busy machines inflate them: treat as an upper-bound ballpark unless the load is low.
+CPU, classifier in batches of 64: 66.7 ms per prompt. CPU figures: 3 torch threads, float32, system-wide CPU utilisation 5% just before the run. Busy machines inflate them: treat as an upper-bound ballpark unless the load is low.
 
-GPU (cuda, float32) for comparison: classifier 31.1 ms p50 / 44.0 ms p95 per prompt, full Sentinel 32.4 / 49.0 ms, batches of 64: 3.0 ms per prompt.
+GPU (cuda, float32) for comparison: classifier 14.1 ms p50 / 19.1 ms p95 per prompt, full Sentinel 14.5 / 31.2 ms, batches of 64: 2.1 ms per prompt.
 <!-- END:latency -->
 
 ### Training
@@ -420,7 +420,7 @@ Across the reported test sets (OOD-dev and the de-duplicated v1 subset excluded)
 - **Small hand-written test sets** (hard-benign v1 and v2, obfuscated, plain attacks v1 and v2, indirect) give wide intervals, and the hard-benign sets are templated in places (hence the distinct-items figure). Hard-benign v1 is no longer a clean test (seen once), and plain attacks v1 informed rule fixes. The in-distribution test is partly synthetic data and flatters the model.
 - **Over-defence is reduced, not removed.** Some benign text that discusses injection will still be blocked; the errors list shows examples.
 - **Obfuscation coverage is finite**: the normaliser handles the common encodings listed above, not arbitrary ciphers or images.
-- **Latency numbers** carry the machine load recorded when they were measured (see the latency table) and are ballpark; the GPU figure is for a GPU that other jobs may have been using.
+- **Latency numbers** were measured with `sentinel eval --latency-only` on an otherwise idle machine (the CPU load recorded just before the run is in the latency table, and I checked that the GPU was idle before the GPU figure). They come from one machine and one run, so they are a ballpark, not a benchmark.
 
 ## Tests and CI
 
