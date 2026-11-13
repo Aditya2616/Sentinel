@@ -125,6 +125,7 @@ textarea#inp[readonly] { color: var(--mute); }
 .gauge .fill.hot { background: var(--ember); }
 .gauge .tick { position: absolute; top: -7px; bottom: -7px; width: 1px; background: var(--dim); }
 .gauge .tick span { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font: 500 9px var(--mono); color: var(--dim); white-space: nowrap; }
+.gauge .tick.end span { left: auto; right: 0; transform: none; }
 .hl { white-space: pre-wrap; overflow-wrap: anywhere; font: 400 14px/1.7 var(--mono); background: var(--void); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; max-height: 260px; overflow: auto; }
 .hl mark { background: var(--ember-soft); color: var(--ember); border-bottom: 2px solid var(--ember); border-radius: 3px; padding: 0 1px; }
 .hl mark.low { border-bottom-style: dotted; } .hl mark.disc { background: transparent; color: var(--bone); border-bottom: 2px dashed var(--dim); }

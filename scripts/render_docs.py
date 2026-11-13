@@ -1,4 +1,4 @@
-"""Fill the generated result blocks in README.md and MODEL_CARD.md from docs/data/eval.json.
+"""Fill the generated result blocks in README.md, docs/RESULTS.md and MODEL_CARD.md from docs/data/eval.json.
 
     python scripts/render_docs.py
 
@@ -176,6 +176,13 @@ def training() -> str:
             "excluding validation passes. It is an extrapolation, and a busier machine is slower."
         )
     sizes = m["build_report"]["sizes"]
+    hn = sum(1 for ln in (ROOT / "data" / "hand_written" / "hard_neg_train.jsonl").read_text(encoding="utf-8").split(NL) if ln.strip())
+    reps = int(values()["hn_repeat"])
+    if sizes["train"]["n"] + hn * (reps - 1) != m["training_log"]["n_train"]:
+        raise ValueError("training-row arithmetic no longer adds up; fix the README sentence generator")
+    lines.append(
+        f"- Training rows: {sizes['train']['n']} de-duplicated rows plus {hn} hard-benign rows repeated {reps - 1} extra times ({reps} copies in total) gives {m['training_log']['n_train']} training rows."
+    )
     lines.append("- Split sizes after de-duplication: " + ", ".join(f"{k} {v['n']} ({v['malicious']} attacks)" for k, v in sizes.items()) + ".")
     return NL.join(lines)
 
@@ -332,7 +339,7 @@ def values() -> dict[str, str]:
         "val_hb_new": str(lines("hard_neg_val.jsonl")),
         "val_hb_total": str(M["val_hard_benign_n"]),
         "hn_train_n": str(lines("hard_neg_train.jsonl")),
-        "hn_repeat": train_py.split("hw_hn_train=")[1].split(chr(34))[0],
+        "hn_repeat": re.search(r"hw_hn_train=(\d+)", train_py).group(1),
         "hb_v1_n": str(S["hard_benign"]["n"]),
         "hb_v1_distinct_n": str(S["hard_benign_dedup"]["n"]),
         "hb_v2_n": str(S["hard_benign_v2"]["n"]),
@@ -355,6 +362,7 @@ def values() -> dict[str, str]:
         "cap_hb": f"{cap[0] * 100:g}%",
         "cap_dolly": f"{cap[1] * 100:g}%",
         "levels": ", ".join(f"{x * 100:g}%" for x in ops[:-1]) + f" and {ops[-1] * 100:g}%",
+        "hb_v2_fpr0": pc(S["hard_benign_v2"]["fpr"], 0),
         "deepset_block": pc(S["deepset"]["recall"], 0),
         "spml_block": pc(S["spml"]["recall"], 0),
         "deepset_flag": pc(S["deepset"]["alert"]["recall"], 0),
@@ -405,7 +413,7 @@ def render(text: str) -> str:
     return substitute(text)
 
 
-DOCS = [ROOT / "README.md", ROOT / "MODEL_CARD.md"]
+DOCS = [ROOT / "README.md", ROOT / "docs" / "RESULTS.md", ROOT / "MODEL_CARD.md"]
 
 
 def fill(path: Path) -> None:

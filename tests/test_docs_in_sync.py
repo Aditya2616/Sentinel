@@ -98,7 +98,7 @@ def test_readme_commands_exist():
         "train": set(re.findall(r'add_argument\("(--[\w-]+)"', (ROOT / "src" / "sentinel" / "train.py").read_text(encoding="utf-8"))),
         "eval": set(re.findall(r'add_argument\("(--[\w-]+)"', (ROOT / "src" / "sentinel" / "evaluate.py").read_text(encoding="utf-8"))),
     }
-    text = (ROOT / "README.md").read_text(encoding="utf-8") + (ROOT / "MODEL_CARD.md").read_text(encoding="utf-8")
+    text = "".join((ROOT / n).read_text(encoding="utf-8") for n in ("README.md", "docs/RESULTS.md", "MODEL_CARD.md"))
     for line in re.findall(r"`(sentinel [^`]+)`|^(sentinel [^#\n]+)", text, flags=re.M):
         cmd = (line[0] or line[1]).strip()
         parts = cmd.split()

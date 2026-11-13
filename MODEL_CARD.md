@@ -24,7 +24,7 @@ Downloaded by script at pinned revisions (`sentinel data`), never redistributed:
 | Hand-written sets in `data/hand_written/` | MIT | train, validation, test (separate halves) |
 | deepset/prompt-injections | Apache-2.0 | out-of-distribution test only, never used for any choice |
 | SPML Chatbot Prompt Injection | MIT | split once by a fixed seed: one half is OOD-dev (model selection only), the other half OOD-test (reported) |
-| Hand-written round-two sets in `data/hand_written/` (mine, MIT) | MIT | <!--v:val_hb_new-->132<!--/v--> hard-benign validation items and <!--v:hn_train_n-->115<!--/v--> hard-negative training items (repeated <!--v:hn_repeat-->4)<!--/v--> times in training); the v2 test sets (<!--v:hb_v2_n-->91<!--/v--> hard-benign, <!--v:att_v2_n-->30<!--/v--> plain attacks) are frozen test data |
+| Hand-written round-two sets in `data/hand_written/` (mine, MIT) | MIT | <!--v:val_hb_new-->132<!--/v--> hard-benign validation items and <!--v:hn_train_n-->115<!--/v--> hard-negative training items (repeated <!--v:hn_repeat-->4<!--/v--> times in training); the v2 test sets (<!--v:hb_v2_n-->91<!--/v--> hard-benign, <!--v:att_v2_n-->30<!--/v--> plain attacks) are frozen test data |
 | hendzh/PromptShield | Apache-2.0 (dataset card) | extra training data: a length-filtered sample (up to 2000 per class, at most 800 characters) of its train split |
 | Lakera/gandalf_ignore_instructions | MIT (dataset card) | extra training data: attacks only, all three splits |
 | Augmentation (`src/sentinel/augment.py`) | MIT (mine) | derived from the training rows only: obfuscated variants, attacks embedded in benign context, benign text quoting attacks |
@@ -50,6 +50,7 @@ Exact duplicates and near-duplicates (character n-gram TF-IDF cosine >= 0.9) bet
 - Selection rule, fixed before the round-two models were trained: each model gets its `balanced` block threshold (validation hard-benign FPR at most 2%, everyday-benign at most 0.5%); the model with the best OOD-dev recall at that threshold is the default. See the selection table.
 - CPU training time, **estimate** for `microsoft/deberta-v3-xsmall`: `scripts/bench_cpu_train.py` timed 12 real steps at 2.16 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 23% just before the run), which extrapolates to about 150.9 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
 - CPU training time, **estimate** for `sentence-transformers/all-MiniLM-L6-v2`: `scripts/bench_cpu_train.py` timed 12 real steps at 0.85 s/step with 3 threads (12 logical cores; system-wide CPU utilisation 25% just before the run), which extrapolates to about 59.2 minutes for 5 epochs (4185 steps), excluding validation passes. It is an extrapolation, and a busier machine is slower.
+- Training rows: 13385 de-duplicated rows plus 115 hard-benign rows repeated 3 extra times (4 copies in total) gives 13730 training rows.
 - Split sizes after de-duplication: train 13385 (7966 attacks), train_base 5864 (3112 attacks), train_aug 7445 (4329 attacks), train_ext 10861 (6109 attacks), val 1737 (621 attacks), test_indist 1187 (562 attacks), test_deepset 660 (261 attacks), test_spml 597 (300 attacks), test_spml_dev 599 (300 attacks), test_hard_benign 60 (0 attacks), test_hard_benign_v2 91 (0 attacks), test_attacks_v2 30 (30 attacks), test_attacks 26 (26 attacks), test_obfuscated 53 (47 attacks), test_dolly_benign 992 (0 attacks), test_indirect 80 (60 attacks), test_hard_benign_dedup 30 (0 attacks).
 <!-- END:training -->
 
@@ -130,7 +131,7 @@ Round-one selection, for the record:
 | deepset benign | 1.5% (6/399) | 1.0% (4/399) | 1.0% (4/399) | 399 |
 <!-- END:before_after -->
 
-Full per-set tables with intervals, for every system, are in the README and `docs/data/eval.json`. The indirect-injection set is synthetic and small.
+Full per-set tables with intervals, for every system, are in [docs/RESULTS.md](docs/RESULTS.md) and `docs/data/eval.json`. The indirect-injection set is synthetic and small.
 
 <!-- BEGIN:language -->
 | deepset subset | n | attacks | Recall (Sentinel) | FPR (Sentinel) | Recall (classifier only) |

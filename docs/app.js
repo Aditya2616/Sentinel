@@ -145,6 +145,7 @@ let lastLiveText = '';
 function setupInspector() {
   const inp = $('#inp');
   mini = new Stage($('#minilane'), { mini: true, lanes: 1, reduced: REDUCED });
+  window.sentinelMini = mini;  // read by scripts/ui_check.py
   $$('#srcseg button').forEach((b) => b.addEventListener('click', () => {
     state.source = b.dataset.src;
     $$('#srcseg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
@@ -198,7 +199,7 @@ async function liveScreen(log) {
     renderResult(text, norm);
     if (log) {
       mini.inject({ text, action: d.action, label: null, reason: d.reason });
-      hero.inject({ text, action: d.action, label: null, reason: d.reason, typed: true, rules: (d.hits || []).map((x) => ({ cat: x.category })), score: d.score });  // your prompt also crosses the main stage
+      hero.inject({ text, action: d.action, label: null, reason: d.reason, typed: true, source: state.source, rules: norm.rules, notes: norm.notes, thresholds: norm.thresholds, score: d.score });  // your prompt also crosses the main stage
       loadAudit();
       toast(`${d.action.toUpperCase()} · logged to the audit trail`);
     }
@@ -217,7 +218,7 @@ function selectItem(it, scroll) {
   state.selected = it;
   $('#inp').value = it.text;
   setSource(it.source || 'user');
-  const norm = { action: it.action, score: it.score, reason: it.reason, notes: it.notes || [], thresholds: state.stream?.thresholds, rules: (it.rules || []).map((r) => ({ id: r.id, sev: r.sev, cat: r.cat, s: r.s, e: r.e, disc: r.disc })), recorded: it };
+  const norm = { action: it.action, score: it.score, reason: it.reason, notes: it.notes || [], thresholds: it.thresholds || state.stream?.thresholds, rules: (it.rules || []).map((r) => ({ id: r.id, sev: r.sev, cat: r.cat, s: r.s, e: r.e, disc: r.disc, desc: r.desc, obf: r.obf })), recorded: it };
   renderResult(it.text, norm);
   if (it.label != null) {
     const truth = it.label === 1 ? 'attack' : 'benign';
@@ -241,7 +242,7 @@ function renderResult(text, d) {
     const g = h('div', { class: 'gauge', role: 'img', 'aria-label': `Classifier score ${d.score.toFixed(2)}` });
     g.append(h('div', { class: 'fill' + (d.score >= (th.t_flag ?? 0.5) ? ' hot' : ''), style: `width:${Math.max(1, d.score * 100)}%` }));
     if (th.t_flag != null) g.append(h('div', { class: 'tick', style: `left:${th.t_flag * 100}%` }, h('span', { text: 'flag ' + th.t_flag.toFixed(2) })));
-    if (th.t_block != null && Math.abs(th.t_block - th.t_flag) > 0.02) g.append(h('div', { class: 'tick', style: `left:${th.t_block * 100}%` }, h('span', { text: 'block ' + th.t_block.toFixed(2) })));
+    if (th.t_block != null && Math.abs(th.t_block - th.t_flag) > 0.02) g.append(h('div', { class: 'tick' + (th.t_block > 0.85 ? ' end' : ''), style: `left:${th.t_block * 100}%` }, h('span', { text: 'block ' + th.t_block.toFixed(2) })));
     kids.push(h('div', { class: 'label', text: `Classifier score (calibrated): ${d.score.toFixed(3)}` }), g);
   } else if (!d.notice) kids.push(h('p', { class: 'label', text: 'No classifier score: rules-only mode.' }));
   kids.push(h('div', { class: 'label', style: 'margin-top:14px', text: 'Text with matched spans' }), highlight(text, d.rules));

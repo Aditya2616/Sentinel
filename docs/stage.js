@@ -134,7 +134,8 @@ export class Stage {
     }
     const y = this.lanes[lane] + (this.mini ? 0 : (Math.random() - 0.5) * 6);
     const vx = (this.mini ? 190 : 130) * this.k * (this.mini ? 1 : this.speed);
-    const startX = this.narrow && !this.mini ? 4 : -w - 8;  // on phones a packet appears fully inside the lane instead of sliding in from off-screen
+    let startX = this.narrow && !this.mini ? 4 : -w - 8;
+    if (this.mini && !this.reduced) startX = Math.min(startX, ...this.pills.map((q) => q.x - w - 14));  // queue behind a packet still entering instead of printing on top of it  // on phones a packet appears fully inside the lane instead of sliding in from off-screen
     const p = { lane, item, txt, chip, chipW, w, h: 24 * this.k + 2, x: this.reduced ? this.shX - w - 26 : startX, y, vx, state: 'approach', a: 1, rot: 0, t: 0, decided: false, born: 0 };
     this.pills.push(p);
     return p;
@@ -174,7 +175,7 @@ export class Stage {
       }
       if (this.reduced && p.state !== 'approach') p.a -= dt * 0.6;
     }
-    this.pills = this.pills.filter((p) => p.state !== 'done' && p.a > 0 && p.x > -p.w - 40);
+    this.pills = this.pills.filter((p) => p.state !== 'done' && p.a > 0 && (p.state === 'approach' || p.x > -p.w - 40));
     for (const q of this.parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 120 * dt; q.a -= dt * 1.8; }
     this.parts = this.parts.filter((q) => q.a > 0);
     for (const f of this.flashes) f.t += dt;
