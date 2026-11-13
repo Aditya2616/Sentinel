@@ -73,7 +73,7 @@ The full pipeline under the three presets:
 
 ### Comparison with a public detector
 
-ProtectAI's `deberta-v3-base-prompt-injection-v2` (<!--v:params_protectai-->184M<!--/v--> parameters, Apache-2.0 on its model card, revision `<!--v:protectai_rev-->90c9989b<!--/v-->`), run zero-shot on exactly the same test sets, on the same GPU in float32. It was never trained or calibrated on my data. I show it at its default threshold of 0.5 and at the threshold that matches my own false-positive target (the same `balanced` rule, applied to its scores on my validation split). `sentinel eval --with-protectai` reproduces this (it downloads about 0.7 GB); the comparison was added after my own model and thresholds were fixed, so it influenced none of my choices.
+ProtectAI's `deberta-v3-base-prompt-injection-v2` (<!--v:params_protectai-->184M<!--/v--> parameters, Apache-2.0 on its model card, revision <!--v:protectai_rev-->90c9989b<!--/v-->), run zero-shot on exactly the same test sets, on the same GPU in float32. It was never trained or calibrated on my data. I show it at its default threshold of 0.5 and at the threshold that matches my own false-positive target (the same `balanced` rule, applied to its scores on my validation split). `sentinel eval --with-protectai` reproduces this (it downloads about 0.7 GB); the comparison was added after my own model and thresholds were fixed, so it influenced none of my choices.
 
 <!-- BEGIN:protectai -->
 | Attack set (recall) | Sentinel (rules + classifier + decision) | DeBERTa-v3-xsmall classifier (default) | ProtectAI v2 zero-shot (threshold 0.5) | ProtectAI v2 zero-shot (balanced-target threshold) |
