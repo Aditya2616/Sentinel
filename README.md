@@ -240,4 +240,9 @@ Code: MIT, Aditya Jain. Data is downloaded at run time from pinned revisions and
 - Base models [microsoft/deberta-v3-xsmall](https://huggingface.co/microsoft/deberta-v3-xsmall) (MIT, default) and [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) (Apache-2.0, compared)
 - My hand-written sets in `data/hand_written/` (MIT)
 
+## Authors
+
+- [Aditya Jain](https://github.com/Aditya2616)
+- [Sneha Singh](https://github.com/snehasingh2608)
+
 Built by [Aditya Jain](https://adityajain16.vercel.app) and [Sneha Singh](https://github.com/snehasingh2608).
