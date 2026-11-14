@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Aditya2616/Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/Aditya2616/Sentinel/actions/workflows/ci.yml) [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
+By [Aditya Jain](https://adityajain16.vercel.app) and [Sneha Singh](https://github.com/snehasingh2608).
+
 A safety layer that screens prompts for injection before they reach a model.
 
 Every incoming prompt is normalised, checked against <!--v:n_rules-->46<!--/v--> rules for known injection patterns, and scored by a small fine-tuned classifier. Suspicious prompts are blocked and logged; clean ones pass through untouched. It runs as a Python library, a CLI, a FastAPI service, and an OpenAI-compatible proxy that sits in front of any chat endpoint.
@@ -238,4 +240,4 @@ Code: MIT, Aditya Jain. Data is downloaded at run time from pinned revisions and
 - Base models [microsoft/deberta-v3-xsmall](https://huggingface.co/microsoft/deberta-v3-xsmall) (MIT, default) and [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) (Apache-2.0, compared)
 - My hand-written sets in `data/hand_written/` (MIT)
 
-Built by [Aditya Jain](https://adityajain16.vercel.app).
+Built by [Aditya Jain](https://adityajain16.vercel.app) and [Sneha Singh](https://github.com/snehasingh2608).
